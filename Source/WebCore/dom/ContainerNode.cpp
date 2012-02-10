@@ -116,6 +116,8 @@ bool ContainerNode::insertBefore(PassRefPtr<Node> newChild, Node* refChild, Exce
     // If it is, it can be deleted as a side effect of sending mutation events.
     ASSERT(refCount() || parentOrHostNode());
 
+    RefPtr<Node> protect(this);
+
     ec = 0;
 
     // insertBefore(node, 0) is equivalent to appendChild(node)
@@ -260,6 +262,8 @@ bool ContainerNode::replaceChild(PassRefPtr<Node> newChild, Node* oldChild, Exce
     // Check that this node is not "floating".
     // If it is, it can be deleted as a side effect of sending mutation events.
     ASSERT(refCount() || parentOrHostNode());
+
+    RefPtr<Node> protect(this);
 
     ec = 0;
 
@@ -426,6 +430,8 @@ bool ContainerNode::removeChild(Node* oldChild, ExceptionCode& ec)
     // Check that this node is not "floating".
     // If it is, it can be deleted as a side effect of sending mutation events.
     ASSERT(refCount() || parentOrHostNode());
+
+    RefPtr<Node> protect(this);
 
     ec = 0;
 
@@ -605,7 +611,7 @@ void ContainerNode::removeChildren()
 
 bool ContainerNode::appendChild(PassRefPtr<Node> newChild, ExceptionCode& ec, bool shouldLazyAttach)
 {
-    RefPtr<ContainerNode> protector(this);
+    RefPtr<ContainerNode> protect(this);
 
     // Check that this node is not "floating".
     // If it is, it can be deleted as a side effect of sending mutation events.
