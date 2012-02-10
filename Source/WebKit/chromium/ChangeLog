@@ -1,13 +1,278 @@
-2012-02-03  Dana Jansens  <danakj@chromium.org>
+2012-01-31  Nico Weber  <thakis@chromium.org>
 
-        [Chromium] Use the current clip when marking paints as opaque
-        https://bugs.webkit.org/show_bug.cgi?id=77582
+        [chromium] Expose windowResizerRectChanged() on WebWidget.
+        https://bugs.webkit.org/show_bug.cgi?id=77453
 
-        Reviewed by Stephen White.
+        Needed for http://crbug.com/111266
 
-        * tests/PlatformContextSkiaTest.cpp:
+        Reviewed by Darin Fisher.
+
+        * public/WebWidget.h:
+        (WebWidget):
+        (WebKit::WebWidget::didChangeWindowResizerRect):
+        * src/WebViewImpl.cpp:
+        (WebKit::WebViewImpl::didChangeWindowResizerRect):
+        (WebKit):
+        * src/WebViewImpl.h:
+        (WebViewImpl):
+
+2012-01-31  Nat Duca  <nduca@chromium.org>
+
+        [chromium] Import PaintAggregator
+        https://bugs.webkit.org/show_bug.cgi?id=53715
+
+        Reviewed by Darin Fisher.
+
+        * WebKit.gyp:
+        * WebKit.gypi:
+        * src/painting/PaintAggregator.cpp: Added.
+        (WebKit::calculateArea):
+        (WebKit::subtractIntersection):
+        (WebKit::sharesEdge):
+        (WebKit::PaintAggregator::PendingUpdate::PendingUpdate):
+        (WebKit::PaintAggregator::PendingUpdate::~PendingUpdate):
+        (WebKit::PaintAggregator::PendingUpdate::calculateScrollDamage):
+        (WebKit::PaintAggregator::PendingUpdate::calculatePaintBounds):
+        (WebKit::PaintAggregator::hasPendingUpdate):
+        (WebKit::PaintAggregator::clearPendingUpdate):
+        (WebKit::PaintAggregator::popPendingUpdate):
+        (WebKit::PaintAggregator::invalidateRect):
+        (WebKit::PaintAggregator::scrollRect):
+        (WebKit::PaintAggregator::scrollPaintRect):
+        (WebKit::PaintAggregator::shouldInvalidateScrollRect):
+        (WebKit::PaintAggregator::invalidateScrollRect):
+        (WebKit::PaintAggregator::combinePaintRects):
+        * src/painting/PaintAggregator.h: Added.
+        * tests/PaintAggregatorTest.cpp: Added.
+        (WebKit::TEST):
+
+2012-01-31  Fady Samuel  <fsamuel@chromium.org>
+
+        [Chromium] ChromeClientImpl::dispatchViewportPropertiesDidChange is repeatedly called in Google News
+        https://bugs.webkit.org/show_bug.cgi?id=77429
+
+        Reviewed by Darin Fisher.
+
+        m_webView->isPageScaleFactorSet() is tested in ChromeClientImpl::layoutUpdated, and it is never true, 
+        because WebViewImpl::setPageScaleFactorPreservingScrollOffset is called repeatedly and exits early 
+        and thus never calls WebViewImpl::setPageScaleFactor which sets the flag.
+        
+        The simplest solution is to simply get rid of the early return in 
+        WebViewImpl::setPageScaleFactorPreservingScrollOffset.
+
+        * src/WebViewImpl.cpp:
+        (WebKit::WebViewImpl::setPageScaleFactorPreservingScrollOffset):
+
+2012-01-31  Fady Samuel  <fsamuel@chromium.org>
+
+        [Chromium] Expose setLayoutFallbackWidth as a WebSetting
+        https://bugs.webkit.org/show_bug.cgi?id=77431
+
+        Reviewed by Darin Fisher.
+
+        The layout fallback width is the default fixed layout width
+        set for desktop web pages that lack a viewport tag. This width
+        can vary from platform to platform and can depend on other factors,
+        and so it should be a setting exposed to Chromium.
+
+        * public/WebSettings.h:
+        ():
+        * src/WebSettingsImpl.cpp:
+        (WebKit::WebSettingsImpl::setLayoutFallbackWidth):
+        (WebKit):
+        * src/WebSettingsImpl.h:
+        (WebSettingsImpl):
+
+2012-01-31  Dana Jansens  <danakj@chromium.org>
+
+        [chromium] Compute occlusion during paint loop
+        https://bugs.webkit.org/show_bug.cgi?id=76858
+
+        Reviewed by James Robinson.
+
+        * tests/CCLayerTreeHostCommonTest.cpp:
         (WebCore::TEST):
         (WebCore):
+        * tests/CCLayerTreeHostTest.cpp:
+        (WTF::ContentLayerChromiumWithUpdateTracking::paintContentsIfDirty):
+        (WTF):
+        (TestLayerChromium):
+        (WTF::TestLayerChromium::create):
+        (WTF::TestLayerChromium::paintContentsIfDirty):
+        (WTF::TestLayerChromium::drawsContent):
+        (WTF::TestLayerChromium::occludedScreenSpace):
+        (WTF::TestLayerChromium::clearOccludedScreenSpace):
+        (WTF::TestLayerChromium::TestLayerChromium):
+        (WTF::setLayerPropertiesForTesting):
+        (CCLayerTreeHostTestLayerOcclusion):
+        (WTF::CCLayerTreeHostTestLayerOcclusion::CCLayerTreeHostTestLayerOcclusion):
+        (WTF::CCLayerTreeHostTestLayerOcclusion::beginTest):
+        (WTF::CCLayerTreeHostTestLayerOcclusion::afterTest):
+        * tests/Canvas2DLayerChromiumTest.cpp:
+        (WebCore::Canvas2DLayerChromiumTest::fullLifecycleTest):
+        * tests/TiledLayerChromiumTest.cpp:
+        (WTF::FakeLayerTextureUpdater::setOpaquePaintRect):
+        (FakeLayerTextureUpdater):
+        (WTF::FakeTiledLayerChromium::paintContentsIfDirty):
+        (WTF::FakeLayerTextureUpdater::prepareToUpdate):
+        (WTF::TEST):
+        (WTF):
+
+2012-01-31  John Bates  <jbates@google.com>
+
+        [Chromium] Add chromium-style tracing support
+        https://bugs.webkit.org/show_bug.cgi?id=76885
+
+        Reviewed by Darin Fisher.
+
+        This code enables WebKit trace events to pass through more data to the
+        chromium platform tracing API and generally to use the full tracing
+        API provided by chromium.
+
+        * public/platform/WebKitPlatformSupport.h:
+        (WebKit::WebKitPlatformSupport::getTraceCategoryEnabledFlag):
+        (WebKit::WebKitPlatformSupport::addTraceEvent):
+        * src/PlatformSupport.cpp:
+        (WebCore::PlatformSupport::getTraceCategoryEnabledFlag):
+        (WebCore::PlatformSupport::addTraceEvent):
+
+2012-01-31  Antoine Labour  <piman@chromium.org>
+
+        Add back temporarily WebKitPlatformSupport::createGraphicsContext3D() to fix build
+        https://bugs.webkit.org/show_bug.cgi?id=77467
+
+        Rubber-stamped by Nate Chapin <japhet@chromium.org>.
+
+        * public/platform/WebKitPlatformSupport.h:
+        (WebKitPlatformSupport):
+        (WebKit::WebKitPlatformSupport::createGraphicsContext3D):
+
+2012-01-31  Antoine Labour  <piman@chromium.org>
+
+        Merge WebGraphicsContext3D creation and initialization, and move it to
+        WebViewClient.
+        https://bugs.webkit.org/show_bug.cgi?id=76593
+
+        Reviewed by Darin Fisher.
+
+        * public/WebViewClient.h:
+        (WebKit::WebViewClient::createGraphicsContext3D):
+        * public/platform/WebGraphicsContext3D.h:
+        (WebKit::WebGraphicsContext3D::initialize):
+        * public/platform/WebKitPlatformSupport.h:
+        * src/GraphicsContext3DChromium.cpp:
+
+2012-01-26  Hans Wennborg  <hans@chromium.org>
+
+        Speech Input: move MockSpeechInputClient into Chromium DumpRenderTree implementation
+        https://bugs.webkit.org/show_bug.cgi?id=77083
+
+        Reviewed by Darin Fisher.
+
+        Remove the WebSpeechInputControllerMock interface and proxy
+        implementation. The mock is moving to the DumpRenderTree
+        implementation instead, which removes the need to expose this
+        interface in the WebKit API.
+
+        Also add a proper copy constructor for WebSpeechInputResult.
+        The default one doesn't do a proper copy.
+
+        * WebKit.gyp:
+        * public/WebSpeechInputControllerMock.h: Removed.
+        * public/WebSpeechInputResult.h:
+        (WebKit::WebSpeechInputResult::WebSpeechInputResult):
+        (WebSpeechInputResult):
+        * src/WebSpeechInputControllerMockImpl.cpp: Removed.
+        * src/WebSpeechInputControllerMockImpl.h: Removed.
+        * src/WebSpeechInputResult.cpp:
+        (WebKit::WebSpeechInputResult::set):
+        (WebKit):
+
+2012-01-31  Sheriff Bot  <webkit.review.bot@gmail.com>
+
+        Unreviewed.  Rolled DEPS.
+
+        * DEPS:
+
+2012-01-30  Sheriff Bot  <webkit.review.bot@gmail.com>
+
+        Unreviewed, rolling out r106324.
+        http://trac.webkit.org/changeset/106324
+        https://bugs.webkit.org/show_bug.cgi?id=77406
+
+        Broke CCLayerTreeHostTestLayerOcclusion.runMultiThread and
+        runSingleThread (Requested by yuzo1 on #webkit).
+
+        * tests/CCLayerTreeHostCommonTest.cpp:
+        (WebCore):
+        * tests/CCLayerTreeHostTest.cpp:
+        (WTF::ContentLayerChromiumWithUpdateTracking::paintContentsIfDirty):
+        * tests/Canvas2DLayerChromiumTest.cpp:
+        (WebCore::Canvas2DLayerChromiumTest::fullLifecycleTest):
+        * tests/TiledLayerChromiumTest.cpp:
+        (FakeLayerTextureUpdater):
+        (WTF::FakeTiledLayerChromium::paintContentsIfDirty):
+        (WTF::FakeLayerTextureUpdater::prepareToUpdate):
+
+2012-01-30  Dana Jansens  <danakj@chromium.org>
+
+        [chromium] Compute occlusion during paint loop
+        https://bugs.webkit.org/show_bug.cgi?id=76858
+
+        Reviewed by James Robinson.
+
+        * tests/CCLayerTreeHostCommonTest.cpp:
+        (WebCore::TEST):
+        (WebCore):
+        * tests/CCLayerTreeHostTest.cpp:
+        (WTF::ContentLayerChromiumWithUpdateTracking::paintContentsIfDirty):
+        (WTF):
+        (TestLayerChromium):
+        (WTF::TestLayerChromium::create):
+        (WTF::TestLayerChromium::paintContentsIfDirty):
+        (WTF::TestLayerChromium::drawsContent):
+        (WTF::TestLayerChromium::occludedScreenSpace):
+        (WTF::TestLayerChromium::clearOccludedScreenSpace):
+        (WTF::TestLayerChromium::TestLayerChromium):
+        (WTF::setLayerPropertiesForTesting):
+        (CCLayerTreeHostTestLayerOcclusion):
+        (WTF::CCLayerTreeHostTestLayerOcclusion::CCLayerTreeHostTestLayerOcclusion):
+        (WTF::CCLayerTreeHostTestLayerOcclusion::beginTest):
+        (WTF::CCLayerTreeHostTestLayerOcclusion::afterTest):
+        * tests/Canvas2DLayerChromiumTest.cpp:
+        (WebCore::Canvas2DLayerChromiumTest::fullLifecycleTest):
+        * tests/TiledLayerChromiumTest.cpp:
+        (WTF::FakeLayerTextureUpdater::setOpaquePaintRect):
+        (FakeLayerTextureUpdater):
+        (WTF::FakeTiledLayerChromium::paintContentsIfDirty):
+        (WTF::FakeLayerTextureUpdater::prepareToUpdate):
+        (WTF::TEST):
+        (WTF):
+
+2012-01-30  Gregg Tavares  <gman@google.com>
+
+        Add Plumming to get graphics error messages to JS Console
+        https://bugs.webkit.org/show_bug.cgi?id=77238
+
+        Reviewed by Kenneth Russell.
+
+        * public/platform/WebGraphicsContext3D.h:
+        (WebGraphicsErrorMessageCallback):
+        (WebKit::WebGraphicsContext3D::WebGraphicsErrorMessageCallback::~WebGraphicsErrorMessageCallback):
+        (WebGraphicsContext3D):
+        (WebKit::WebGraphicsContext3D::setErrorMessageCallback):
+        * src/GraphicsContext3DChromium.cpp:
+        (WebCore::GraphicsContext3D::~GraphicsContext3D):
+        (WebCore):
+        (GraphicsErrorMessageCallbackAdapter):
+        (WebCore::GraphicsErrorMessageCallbackAdapter::~GraphicsErrorMessageCallbackAdapter):
+        (WebCore::GraphicsErrorMessageCallbackAdapter::GraphicsErrorMessageCallbackAdapter):
+        (WebCore::GraphicsErrorMessageCallbackAdapter::onErrorMessage):
+        (WebCore::GraphicsErrorMessageCallbackAdapter::create):
+        (WebCore::GraphicsContext3DPrivate::setErrorMessageCallback):
+        * src/GraphicsContext3DPrivate.h:
+        (WebCore):
+        ():
 
 2012-01-30  Sheriff Bot  <webkit.review.bot@gmail.com>
 
