@@ -306,7 +306,7 @@ void InspectorInstrumentation::didDispatchEventImpl(const InspectorInstrumentati
 
 InspectorInstrumentationCookie InspectorInstrumentation::willDispatchEventOnWindowImpl(InstrumentingAgents* instrumentingAgents, const Event& event, DOMWindow* window)
 {
-    pauseOnNativeEventIfNeeded(instrumentingAgents, listenerEventCategoryType, event.type(), false);
+    pauseOnNativeEventIfNeeded(instrumentingAgents, true, event.type(), false);
 
     int timelineAgentId = 0;
     InspectorTimelineAgent* timelineAgent = instrumentingAgents->inspectorTimelineAgent();
