@@ -264,8 +264,6 @@ void CCLayerTreeHostImpl::drawLayers()
     CCRenderPassList passes;
     calculateRenderPasses(passes);
 
-    optimizeRenderPasses(passes);
-
     m_layerRenderer->beginDrawingFrame();
     for (size_t i = 0; i < passes.size(); ++i)
         m_layerRenderer->drawRenderPass(passes[i].get());

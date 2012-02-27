@@ -85,7 +85,7 @@ struct PaintFillAlpha : public PaintCallback {
     EXPECT_EQ(a.y(), b.y()); \
     EXPECT_EQ(a.maxY(), b.maxY());
 
-TEST(LayerTextureUpdaterTest, testOpaqueRectPresentAfterOpaquePaint)
+TEST(LayerTextureUpdaterTest, DISABLED_testOpaqueRectPresentAfterOpaquePaint)
 {
     PaintFillOpaque fillOpaque;
     RefPtr<LayerTextureUpdater> updater;
@@ -111,7 +111,7 @@ TEST(LayerTextureUpdaterTest, testOpaqueRectPresentAfterOpaquePaint)
     EXPECT_EQ_RECT(IntRect(0, 0, 400, 400), opaqueRect);
 }
 
-TEST(LayerTextureUpdaterTest, testOpaqueRectNotPresentAfterNonOpaquePaint)
+TEST(LayerTextureUpdaterTest, DISABLED_testOpaqueRectNotPresentAfterNonOpaquePaint)
 {
     PaintFillAlpha fillAlpha;
     RefPtr<LayerTextureUpdater> updater;

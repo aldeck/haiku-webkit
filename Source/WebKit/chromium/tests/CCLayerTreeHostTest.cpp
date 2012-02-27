@@ -522,6 +522,16 @@ public:
         runTest(true);                                    \
     }
 
+#define DISABLED_SINGLE_AND_MULTI_THREAD_TEST_F(TEST_FIXTURE_NAME) \
+    TEST_F(TEST_FIXTURE_NAME, DISABLED_runSingleThread)            \
+    {                                                              \
+        runTest(false);                                            \
+    }                                                              \
+    TEST_F(TEST_FIXTURE_NAME, DISABLED_runMultiThread)             \
+    {                                                              \
+        runTest(true);                                             \
+    }
+
 SINGLE_AND_MULTI_THREAD_TEST_F(CCLayerTreeHostTestShortlived1)
 
 // Shortlived layerTreeHosts shouldn't die with a commit in flight.

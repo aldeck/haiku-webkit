@@ -54,7 +54,6 @@ void SkPictureCanvasLayerTextureUpdater::prepareToUpdate(const IntRect& contentR
     SkCanvas* canvas = m_picture.beginRecording(contentRect.width(), contentRect.height());
     PlatformContextSkia platformContext(canvas);
     platformContext.setDeferred(true);
-    platformContext.setTrackOpaqueRegion(!m_layerIsOpaque);
     GraphicsContext graphicsContext(&platformContext);
     paintContents(graphicsContext, contentRect, contentsScale);
     m_picture.endRecording();
