@@ -692,7 +692,7 @@ static bool findNodesSurroundingContext(Document* document, RefPtr<Node>& nodeBe
 static void trimFragment(DocumentFragment* fragment, Node* nodeBeforeContext, Node* nodeAfterContext)
 {
     ExceptionCode ec = 0;
-    Node* next;
+    RefPtr<Node> next;
     for (RefPtr<Node> node = fragment->firstChild(); node; node = next) {
         if (nodeBeforeContext->isDescendantOf(node.get())) {
             next = node->traverseNextNode();
@@ -706,9 +706,9 @@ static void trimFragment(DocumentFragment* fragment, Node* nodeBeforeContext, No
     }
 
     ASSERT(nodeAfterContext->parentNode());
-    for (Node* node = nodeAfterContext; node; node = next) {
+    for (RefPtr<Node> node = nodeAfterContext; node; node = next) {
         next = node->traverseNextSibling();
-        node->parentNode()->removeChild(node, ec);
+        node->parentNode()->removeChild(node.get(), ec);
         ASSERT(!ec);
     }
 }

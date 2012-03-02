@@ -357,10 +357,11 @@ static inline bool hasOneTextChild(ContainerNode* node)
     return hasOneChild(node) && node->firstChild()->isTextNode();
 }
 
-static void replaceChildrenWithFragment(HTMLElement* element, PassRefPtr<DocumentFragment> fragment, ExceptionCode& ec)
+static void replaceChildrenWithFragment(HTMLElement* elementNode, PassRefPtr<DocumentFragment> fragment, ExceptionCode& ec)
 {
+    RefPtr<HTMLElement> element(elementNode);
 #if ENABLE(MUTATION_OBSERVERS)
-    ChildListMutationScope mutation(element);
+    ChildListMutationScope mutation(element.get());
 #endif
 
     if (!fragment->firstChild()) {
@@ -368,12 +369,12 @@ static void replaceChildrenWithFragment(HTMLElement* element, PassRefPtr<Documen
         return;
     }
 
-    if (hasOneTextChild(element) && hasOneTextChild(fragment.get())) {
+    if (hasOneTextChild(element.get()) && hasOneTextChild(fragment.get())) {
         static_cast<Text*>(element->firstChild())->setData(static_cast<Text*>(fragment->firstChild())->data(), ec);
         return;
     }
 
-    if (hasOneChild(element)) {
+    if (hasOneChild(element.get())) {
         element->replaceChild(fragment, element->firstChild(), ec);
         return;
     }
@@ -382,20 +383,21 @@ static void replaceChildrenWithFragment(HTMLElement* element, PassRefPtr<Documen
     element->appendChild(fragment, ec);
 }
 
-static void replaceChildrenWithText(HTMLElement* element, const String& text, ExceptionCode& ec)
+static void replaceChildrenWithText(HTMLElement* elementNode, const String& text, ExceptionCode& ec)
 {
+    RefPtr<HTMLElement> element(elementNode);
 #if ENABLE(MUTATION_OBSERVERS)
-    ChildListMutationScope mutation(element);
+    ChildListMutationScope mutation(element.get());
 #endif
 
-    if (hasOneTextChild(element)) {
+    if (hasOneTextChild(element.get())) {
         static_cast<Text*>(element->firstChild())->setData(text, ec);
         return;
     }
 
     RefPtr<Text> textNode = Text::create(element->document(), text);
 
-    if (hasOneChild(element)) {
+    if (hasOneChild(element.get())) {
         element->replaceChild(textNode.release(), element->firstChild(), ec);
         return;
     }
