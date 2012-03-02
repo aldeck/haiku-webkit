@@ -421,14 +421,47 @@ void dumpInstanceTree(unsigned int& depth, String& text, SVGElementInstance* tar
 }
 #endif
 
-static bool isDisallowedElement(Node* element)
+static bool isDisallowedElement(Node* node)
 {
-    // <foreignObject> should never be contained in a <use> tree. Too dangerous side effects possible.
-    if (element->hasTagName(SVGNames::foreignObjectTag))
+    // Spec: "Any 'svg', 'symbol', 'g', graphics element or other 'use' is potentially a template object that can be re-used
+    // (i.e., "instanced") in the SVG document via a 'use' element."
+    // "Graphics Element" is defined as 'circle', 'ellipse', 'image', 'line', 'path', 'polygon', 'polyline', 'rect', 'text'
+    // Excluded are anything that is used by reference or that only make sense to appear once in a document.
+    // We must also allow the shadow roots of other use elements and text.
+    if (node->isTextNode())
+        return false;
+
+    if (!node->isSVGElement())
         return true;
-    if (SVGSMILElement::isSMILElement(element))
-        return true;
-    return false;
+
+    SVGElement* element = static_cast<SVGElement*>(node);
+
+    DEFINE_STATIC_LOCAL(HashSet<QualifiedName>, allowedElementTags, ());
+    if (allowedElementTags.isEmpty()) {
+        allowedElementTags.add(SVGNames::aTag);
+        allowedElementTags.add(SVGNames::circleTag);
+        allowedElementTags.add(SVGNames::defsTag);
+        allowedElementTags.add(SVGNames::descTag);
+        allowedElementTags.add(SVGNames::ellipseTag);
+        allowedElementTags.add(SVGNames::gTag);
+        allowedElementTags.add(SVGNames::imageTag);
+        allowedElementTags.add(SVGNames::lineTag);
+        allowedElementTags.add(SVGNames::metadataTag);
+        allowedElementTags.add(SVGNames::pathTag);
+        allowedElementTags.add(SVGNames::polygonTag);
+        allowedElementTags.add(SVGNames::polylineTag);
+        allowedElementTags.add(SVGNames::rectTag);
+        allowedElementTags.add(SVGNames::svgTag);
+        allowedElementTags.add(SVGNames::switchTag);
+        allowedElementTags.add(SVGNames::symbolTag);
+        allowedElementTags.add(SVGNames::textTag);
+        allowedElementTags.add(SVGNames::textPathTag);
+        allowedElementTags.add(SVGNames::titleTag);
+        allowedElementTags.add(SVGNames::trefTag);
+        allowedElementTags.add(SVGNames::tspanTag);
+        allowedElementTags.add(SVGNames::useTag);
+    }
+    return !allowedElementTags.contains<QualifiedName, SVGAttributeHashTranslator>(element->tagQName());
 }
 
 static bool subtreeContainsDisallowedElement(Node* start)
