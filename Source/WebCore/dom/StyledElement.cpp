@@ -221,7 +221,6 @@ void StyledElement::classAttributeChanged(const AtomicString& newClassString)
     } else if (attributeMap())
         attributeMap()->clearClass();
     setNeedsStyleRecalc();
-    dispatchSubtreeModifiedEvent();
 }
 
 void StyledElement::parseMappedAttribute(Attribute* attr)
