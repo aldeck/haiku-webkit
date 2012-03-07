@@ -433,6 +433,8 @@ public:
     virtual bool needsPreferredWidthsRecalculation() const;
     virtual void computeIntrinsicRatioInformation(FloatSize& /* intrinsicSize */, double& /* intrinsicRatio */, bool& /* isPercentageIntrinsicSize */) const { }
 
+    virtual bool hasRelativeDimensions() const;
+
 protected:
     virtual void willBeDestroyed();
 
