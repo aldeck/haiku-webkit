@@ -33,6 +33,7 @@
 #include "Element.h"
 #include "Frame.h"
 #include "HTMLNames.h"
+#include "ScopedEventQueue.h"
 #include "Text.h"
 #include <wtf/text/WTFString.h>
 
@@ -114,6 +115,8 @@ void XMLErrors::insertErrorMessageBlock()
     // One or more errors occurred during parsing of the code. Display an error block to the user above
     // the normal content (the DOM tree is created manually and includes line/col info regarding
     // where the errors are located)
+
+    EventQueueScope scope;
 
     // Create elements for display
     ExceptionCode ec = 0;
