@@ -764,6 +764,8 @@ public:
     // descendants (as described above in the SelectionState enum declaration).
     SelectionState selectionState() const { return m_bitfields.selectionState(); }
     virtual void setSelectionState(SelectionState state) { m_bitfields.setSelectionState(state); }
+    inline void setSelectionStateIfNeeded(SelectionState);
+    bool canUpdateSelectionOnRootLineBoxes();
 
     // A single rectangle that encompasses all of the selected objects within this object.  Used to determine the tightest
     // possible bounding box for the selection.
@@ -1103,6 +1105,14 @@ inline bool RenderObject::preservesNewline() const
 #endif
         
     return style()->preserveNewline();
+}
+
+inline void RenderObject::setSelectionStateIfNeeded(SelectionState state)
+{
+    if (selectionState() == state)
+        return;
+
+    setSelectionState(state);
 }
 
 inline void makeMatrixRenderable(TransformationMatrix& matrix, bool has3DRendering)

@@ -2786,6 +2786,12 @@ CursorDirective RenderObject::getCursor(const LayoutPoint&, Cursor&) const
     return SetCursorBasedOnStyle;
 }
 
+bool RenderObject::canUpdateSelectionOnRootLineBoxes()
+{
+    RenderBlock* containingBlock = this->containingBlock();
+    return containingBlock ? !containingBlock->needsLayout() : true;
+}
+
 #if ENABLE(SVG)
 
 RenderSVGResourceContainer* RenderObject::toRenderSVGResourceContainer()
