@@ -1374,7 +1374,8 @@ void HTMLInputElement::setCanReceiveDroppedFiles(bool canReceiveDroppedFiles)
     if (m_canReceiveDroppedFiles == canReceiveDroppedFiles)
         return;
     m_canReceiveDroppedFiles = canReceiveDroppedFiles;
-    renderer()->updateFromElement();
+    if (renderer())
+        renderer()->updateFromElement();
 }
 
 String HTMLInputElement::visibleValue() const
