@@ -277,7 +277,7 @@ void XSSAuditor::filterToken(HTMLToken& token)
     case AfterScriptStartTag:
         didBlockScript = filterTokenAfterScriptStartTag(token);
         ASSERT(m_state == Initial);
-        m_cachedSnippet = String();
+        m_cachedDecodedSnippet = String();
         break;
     }
 
@@ -341,16 +341,10 @@ bool XSSAuditor::filterTokenAfterScriptStartTag(HTMLToken& token)
         return false;
     }
 
-    TextResourceDecoder* decoder = m_parser->document()->decoder();
-    if (isContainedInRequest(fullyDecodeString(m_cachedSnippet, decoder))) {
-        int start = 0;
-        int end = token.endIndex() - token.startIndex();
-        String snippet = snippetForJavaScript(snippetForRange(token, start, end));
-        if (isContainedInRequest(fullyDecodeString(snippet, decoder))) {
-            token.eraseCharacters();
-            token.appendToCharacter(' '); // Technically, character tokens can't be empty.
-            return true;
-        }
+    if (isContainedInRequest(m_cachedDecodedSnippet) && isContainedInRequest(decodedSnippetForJavaScript(token))) {
+        token.eraseCharacters();
+        token.appendToCharacter(' '); // Technically, character tokens can't be empty.
+        return true;
     }
     return false;
 }
@@ -361,11 +355,12 @@ bool XSSAuditor::filterScriptToken(HTMLToken& token)
     ASSERT(token.type() == HTMLTokenTypes::StartTag);
     ASSERT(hasName(token, scriptTag));
 
-    if (eraseAttributeIfInjected(token, srcAttr, blankURL().string(), SrcLikeAttribute))
-        return true;
-
     m_state = AfterScriptStartTag;
-    m_cachedSnippet = m_parser->sourceForToken(token);
+    m_cachedDecodedSnippet = stripLeadingAndTrailingHTMLSpaces(decodedSnippetForToken(token));
+
+    if (isContainedInRequest(decodedSnippetForName(token)))
+        return eraseAttributeIfInjected(token, srcAttr, blankURL().string(), SrcLikeAttribute);
+
     return false;
 }
 
@@ -376,11 +371,11 @@ bool XSSAuditor::filterObjectToken(HTMLToken& token)
     ASSERT(hasName(token, objectTag));
 
     bool didBlockScript = false;
-
-    didBlockScript |= eraseAttributeIfInjected(token, dataAttr, blankURL().string(), SrcLikeAttribute);
-    didBlockScript |= eraseAttributeIfInjected(token, typeAttr);
-    didBlockScript |= eraseAttributeIfInjected(token, classidAttr);
-
+    if (isContainedInRequest(decodedSnippetForName(token))) {
+        didBlockScript |= eraseAttributeIfInjected(token, dataAttr, blankURL().string(), SrcLikeAttribute);
+        didBlockScript |= eraseAttributeIfInjected(token, typeAttr);
+        didBlockScript |= eraseAttributeIfInjected(token, classidAttr);
+    }
     return didBlockScript;
 }
 
@@ -410,11 +405,11 @@ bool XSSAuditor::filterEmbedToken(HTMLToken& token)
     ASSERT(hasName(token, embedTag));
 
     bool didBlockScript = false;
-
-    didBlockScript |= eraseAttributeIfInjected(token, codeAttr, String(), SrcLikeAttribute);
-    didBlockScript |= eraseAttributeIfInjected(token, srcAttr, blankURL().string(), SrcLikeAttribute);
-    didBlockScript |= eraseAttributeIfInjected(token, typeAttr);
-
+    if (isContainedInRequest(decodedSnippetForName(token))) {
+        didBlockScript |= eraseAttributeIfInjected(token, codeAttr, String(), SrcLikeAttribute);
+        didBlockScript |= eraseAttributeIfInjected(token, srcAttr, blankURL().string(), SrcLikeAttribute);
+        didBlockScript |= eraseAttributeIfInjected(token, typeAttr);
+    }
     return didBlockScript;
 }
 
@@ -425,10 +420,10 @@ bool XSSAuditor::filterAppletToken(HTMLToken& token)
     ASSERT(hasName(token, appletTag));
 
     bool didBlockScript = false;
-
-    didBlockScript |= eraseAttributeIfInjected(token, codeAttr, String(), SrcLikeAttribute);
-    didBlockScript |= eraseAttributeIfInjected(token, objectAttr);
-
+    if (isContainedInRequest(decodedSnippetForName(token))) {
+        didBlockScript |= eraseAttributeIfInjected(token, codeAttr, String(), SrcLikeAttribute);
+        didBlockScript |= eraseAttributeIfInjected(token, objectAttr);
+    }
     return didBlockScript;
 }
 
@@ -438,7 +433,10 @@ bool XSSAuditor::filterIframeToken(HTMLToken& token)
     ASSERT(token.type() == HTMLTokenTypes::StartTag);
     ASSERT(hasName(token, iframeTag));
 
-    return eraseAttributeIfInjected(token, srcAttr, String(), SrcLikeAttribute);
+    if (isContainedInRequest(decodedSnippetForName(token)))
+        return eraseAttributeIfInjected(token, srcAttr, String(), SrcLikeAttribute);
+
+    return false;
 }
 
 bool XSSAuditor::filterMetaToken(HTMLToken& token)
@@ -531,11 +529,17 @@ bool XSSAuditor::eraseAttributeIfInjected(HTMLToken& token, const QualifiedName&
     return false;
 }
 
-String XSSAuditor::snippetForRange(const HTMLToken& token, int start, int end)
+String XSSAuditor::decodedSnippetForToken(const HTMLToken& token)
 {
-    // FIXME: There's an extra allocation here that we could save by
-    //        passing the range to the parser.
-    return m_parser->sourceForToken(token).substring(start, end - start);
+    String snippet = m_parser->sourceForToken(token);
+    return fullyDecodeString(snippet, m_parser->document()->decoder());
+}
+
+String XSSAuditor::decodedSnippetForName(const HTMLToken& token)
+{
+    // Grab a fixed number of characters equal to the length of the token's
+    // name plus one (to account for the "<").
+    return decodedSnippetForToken(token).substring(0, token.name().size() + 1);
 }
 
 String XSSAuditor::decodedSnippetForAttribute(const HTMLToken& token, const HTMLToken::Attribute& attribute, AttributeKind treatment)
@@ -548,7 +552,7 @@ String XSSAuditor::decodedSnippetForAttribute(const HTMLToken& token, const HTML
     // FIXME: We should grab one character before the name also.
     int start = attribute.m_nameRange.m_start - token.startIndex();
     int end = attribute.m_valueRange.m_end - token.startIndex();
-    String decodedSnippet = fullyDecodeString(snippetForRange(token, start, end), m_parser->document()->decoder());
+    String decodedSnippet = fullyDecodeString(m_parser->sourceForToken(token).substring(start, end - start), m_parser->document()->decoder());
     decodedSnippet.truncate(kMaximumSnippetLength);
     if (treatment == SrcLikeAttribute) {
         int slashCount;
@@ -567,31 +571,9 @@ String XSSAuditor::decodedSnippetForAttribute(const HTMLToken& token, const HTML
     return decodedSnippet;
 }
 
-bool XSSAuditor::isContainedInRequest(const String& decodedSnippet)
+String XSSAuditor::decodedSnippetForJavaScript(const HTMLToken& token)
 {
-    if (decodedSnippet.isEmpty())
-        return false;
-    if (m_decodedURL.find(decodedSnippet, 0, false) != notFound)
-        return true;
-    if (m_decodedHTTPBodySuffixTree && !m_decodedHTTPBodySuffixTree->mightContain(decodedSnippet))
-        return false;
-    return m_decodedHTTPBody.find(decodedSnippet, 0, false) != notFound;
-}
-
-bool XSSAuditor::isSameOriginResource(const String& url)
-{
-    // If the resource is loaded from the same URL as the enclosing page, it's
-    // probably not an XSS attack, so we reduce false positives by allowing the
-    // request. If the resource has a query string, we're more suspicious,
-    // however, because that's pretty rare and the attacker might be able to
-    // trick a server-side script into doing something dangerous with the query
-    // string.
-    KURL resourceURL(m_parser->document()->url(), url);
-    return (m_parser->document()->url().host() == resourceURL.host() && resourceURL.query().isEmpty());
-}
-
-String XSSAuditor::snippetForJavaScript(const String& string)
-{
+    String string = m_parser->sourceForToken(token);
     const size_t kMaximumFragmentLengthTarget = 100;
 
     size_t startPosition = 0;
@@ -637,7 +619,30 @@ String XSSAuditor::snippetForJavaScript(const String& string)
         }
     }
     
-    return string.substring(startPosition, endPosition - startPosition);
+    return fullyDecodeString(string.substring(startPosition, endPosition - startPosition), m_parser->document()->decoder());
+}
+
+bool XSSAuditor::isContainedInRequest(const String& decodedSnippet)
+{
+    if (decodedSnippet.isEmpty())
+        return false;
+    if (m_decodedURL.find(decodedSnippet, 0, false) != notFound)
+        return true;
+    if (m_decodedHTTPBodySuffixTree && !m_decodedHTTPBodySuffixTree->mightContain(decodedSnippet))
+        return false;
+    return m_decodedHTTPBody.find(decodedSnippet, 0, false) != notFound;
+}
+
+bool XSSAuditor::isSameOriginResource(const String& url)
+{
+    // If the resource is loaded from the same URL as the enclosing page, it's
+    // probably not an XSS attack, so we reduce false positives by allowing the
+    // request. If the resource has a query string, we're more suspicious,
+    // however, because that's pretty rare and the attacker might be able to
+    // trick a server-side script into doing something dangerous with the query
+    // string.
+    KURL resourceURL(m_parser->document()->url(), url);
+    return (m_parser->document()->url().host() == resourceURL.host() && resourceURL.query().isEmpty());
 }
 
 } // namespace WebCore
