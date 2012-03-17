@@ -5300,8 +5300,13 @@ void Document::loadEventDelayTimerFired(Timer<Document>*)
 #if ENABLE(REQUEST_ANIMATION_FRAME)
 int Document::webkitRequestAnimationFrame(PassRefPtr<RequestAnimationFrameCallback> callback, Element* animationElement)
 {
-    if (!m_scriptedAnimationController)
+    if (!m_scriptedAnimationController) {
+#if USE(REQUEST_ANIMATION_FRAME_DISPLAY_MONITOR)
         m_scriptedAnimationController = ScriptedAnimationController::create(this, page()->displayID());
+#else
+        m_scriptedAnimationController = ScriptedAnimationController::create(this, 0);
+#endif
+    }
 
     return m_scriptedAnimationController->registerCallback(callback, animationElement);
 }
