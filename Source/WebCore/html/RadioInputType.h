@@ -48,6 +48,7 @@ private:
     virtual void handleKeydownEvent(KeyboardEvent*) OVERRIDE;
     virtual void handleKeyupEvent(KeyboardEvent*) OVERRIDE;
     virtual bool isKeyboardFocusable() const OVERRIDE;
+    virtual void attach() OVERRIDE;
     virtual bool shouldSendChangeEventAfterCheckedChanged() OVERRIDE;
     virtual PassOwnPtr<ClickHandlingState> willDispatchClick() OVERRIDE;
     virtual void didDispatchClick(Event*, const ClickHandlingState&) OVERRIDE;

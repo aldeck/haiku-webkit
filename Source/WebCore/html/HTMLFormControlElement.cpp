@@ -122,19 +122,13 @@ void HTMLFormControlElement::parseMappedAttribute(Attribute* attr)
     } else if (attr->name() == requiredAttr) {
         bool oldRequired = m_required;
         m_required = !attr->isNull();
-        if (oldRequired != m_required)
-            requiredAttributeChanged();
+        if (oldRequired != m_required) {
+            setNeedsValidityCheck();
+            setNeedsStyleRecalc(); // Updates for :required :optional classes.
+        }
     } else
         HTMLElement::parseMappedAttribute(attr);
     setNeedsWillValidateCheck();
-}
-
-void HTMLFormControlElement::requiredAttributeChanged()
-{
-    setNeedsValidityCheck();
-    // Style recalculation is needed because style selectors may include
-    // :required and :optional pseudo-classes.
-    setNeedsStyleRecalc();
 }
 
 static bool shouldAutofocus(HTMLFormControlElement* element)

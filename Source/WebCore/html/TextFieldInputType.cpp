@@ -69,7 +69,7 @@ bool TextFieldInputType::isTextField() const
 
 bool TextFieldInputType::valueMissing(const String& value) const
 {
-    return element()->required() && value.isEmpty();
+    return value.isEmpty();
 }
 
 bool TextFieldInputType::canSetSuggestedValue()
