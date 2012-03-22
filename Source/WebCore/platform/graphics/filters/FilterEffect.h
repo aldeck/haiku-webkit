@@ -87,9 +87,6 @@ public:
     void apply();
     
     virtual void platformApplySoftware() = 0;
-#if USE(SKIA)
-    virtual bool platformApplySkia() { return false; }
-#endif
     virtual void dump() = 0;
 
     virtual void determineAbsolutePaintRect();

@@ -104,10 +104,6 @@ void FilterEffect::apply()
     determineAbsolutePaintRect();
     
     // Add platform specific apply functions here and return earlier.
-#if USE(SKIA)
-    if (platformApplySkia())
-        return;
-#endif
     platformApplySoftware();
 }
 
