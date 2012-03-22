@@ -152,7 +152,8 @@ size_t ImageBuffer::dataSize() const
 
 PassRefPtr<Image> ImageBuffer::copyImage(BackingStoreCopy copyBehavior) const
 {
-    return BitmapImageSingleFrameSkia::create(*m_data.m_platformContext.bitmap(), copyBehavior == CopyBackingStore);
+    ASSERT(copyBehavior == CopyBackingStore);
+    return BitmapImageSingleFrameSkia::create(*m_data.m_platformContext.bitmap(), true);
 }
 
 PlatformLayer* ImageBuffer::platformLayer() const
