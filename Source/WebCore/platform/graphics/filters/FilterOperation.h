@@ -35,11 +35,6 @@
 #include <wtf/RefCounted.h>
 #include <wtf/text/AtomicString.h>
 
-// Annoyingly, wingdi.h #defines this.
-#ifdef PASSTHROUGH
-#undef PASSTHROUGH
-#endif
-
 namespace WebCore {
 
 // CSS Filters
