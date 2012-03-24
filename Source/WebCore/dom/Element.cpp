@@ -2013,7 +2013,7 @@ void Element::willModifyAttribute(const QualifiedName& name, const AtomicString&
 #endif
 }
 
-void Element::didModifyAttribute(Attribute* attr)
+void Element::didAddAttribute(Attribute* attr)
 {
     attributeChanged(attr);
 
@@ -2021,6 +2021,14 @@ void Element::didModifyAttribute(Attribute* attr)
         InspectorInstrumentation::didModifyDOMAttr(document(), this, attr->name().localName(), attr->value());
         dispatchSubtreeModifiedEvent();
     }
+}
+
+void Element::didModifyAttribute(Attribute* attr)
+{
+    attributeChanged(attr);
+
+    if (!isSynchronizingStyleAttribute())
+        InspectorInstrumentation::didModifyDOMAttr(document(), this, attr->name().localName(), attr->value());
 }
 
 void Element::didRemoveAttribute(Attribute* attr)

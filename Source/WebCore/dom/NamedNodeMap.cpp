@@ -261,7 +261,7 @@ void NamedNodeMap::addAttribute(PassRefPtr<Attribute> prpAttribute)
         attr->m_element = m_element;
 
     if (m_element)
-        m_element->didModifyAttribute(attribute.get());
+        m_element->didAddAttribute(attribute.get());
 }
 
 void NamedNodeMap::removeAttribute(size_t index)
