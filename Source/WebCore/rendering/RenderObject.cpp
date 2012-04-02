@@ -329,11 +329,8 @@ void RenderObject::addChild(RenderObject* newChild, RenderObject* beforeChild)
         children->insertChildNode(this, newChild, beforeChild);
     }
 
-    if (newChild->isText() && newChild->style()->textTransform() == CAPITALIZE) {
-        RefPtr<StringImpl> textToTransform = toRenderText(newChild)->originalText();
-        if (textToTransform)
-            toRenderText(newChild)->setText(textToTransform.release(), true);
-    }
+    if (newChild->isText() && newChild->style()->textTransform() == CAPITALIZE)
+        toRenderText(newChild)->transformText();
 
     if (beforeChildHasBeforeAndAfterContent)
         children->updateBeforeAfterContent(this, BEFORE);
