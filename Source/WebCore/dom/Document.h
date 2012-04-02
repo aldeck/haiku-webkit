@@ -612,6 +612,8 @@ public:
 
     virtual void disableEval();
 
+    bool canNavigate(Frame* targetFrame);
+
     CSSStyleSheet* pageUserSheet();
     void clearPageUserSheet();
     void updatePageUserSheet();

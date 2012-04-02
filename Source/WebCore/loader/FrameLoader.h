@@ -246,7 +246,6 @@ public:
 
     FrameLoaderStateMachine* stateMachine() const { return &m_stateMachine; }
 
-    bool shouldAllowNavigation(Frame* targetFrame) const;
     Frame* findFrameForNavigation(const AtomicString& name);
 
     void applyUserAgent(ResourceRequest&);
