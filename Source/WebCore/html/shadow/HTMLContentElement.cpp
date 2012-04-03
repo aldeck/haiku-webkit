@@ -40,12 +40,8 @@ using HTMLNames::selectAttr;
 
 static const QualifiedName& contentTagName()
 {
-#if ENABLE(SHADOW_DOM)
-    return HTMLNames::contentTag;
-#else
     DEFINE_STATIC_LOCAL(QualifiedName, tagName, (nullAtom, "webkitShadowContent", HTMLNames::divTag.namespaceURI()));
     return tagName;
-#endif
 }
 
 PassRefPtr<HTMLContentElement> HTMLContentElement::create(Document* document)
