@@ -444,6 +444,7 @@ protected:
     {
         LayoutUnit repaintLogicalTop = 0;
         LayoutUnit repaintLogicalBottom = 0;
+        clearFloats(NormalLayoutPass);
         layoutInlineChildren(true, repaintLogicalTop, repaintLogicalBottom);
     }
 #endif
