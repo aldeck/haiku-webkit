@@ -24,14 +24,13 @@
 #include <QtCore/qobject.h>
 #include <QtCore/qurl.h>
 #include <QtCore/qvariant.h>
-#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
-#include <QtWidgets/qicon.h>
-#else
 #include <QtGui/qicon.h>
-#endif
-#include <QtScript/qscriptengine.h>
 #include <QtNetwork/qnetworkaccessmanager.h>
 #include "qwebkitglobal.h"
+
+#if QT_VERSION < QT_VERSION_CHECK(5, 0, 0)
+#include <QtScript/qscriptengine.h>
+#endif
 
 QT_BEGIN_NAMESPACE
 class QRect;
@@ -125,6 +124,14 @@ private:
     ~QWebFrame();
 
 public:
+#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
+    enum ValueOwnership {
+        QtOwnership,
+        ScriptOwnership,
+        AutoOwnership
+    };
+#endif
+
     QWebPage *page() const;
 
     void load(const QUrl &url);
@@ -132,8 +139,11 @@ public:
     void setHtml(const QString &html, const QUrl &baseUrl = QUrl());
     void setContent(const QByteArray &data, const QString &mimeType = QString(), const QUrl &baseUrl = QUrl());
 
-    void addToJavaScriptWindowObject(const QString &name, QObject *object);
-    void addToJavaScriptWindowObject(const QString &name, QObject *object, QScriptEngine::ValueOwnership ownership);
+#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
+    void addToJavaScriptWindowObject(const QString &name, QObject *object, ValueOwnership ownership = QtOwnership);
+#else
+    void addToJavaScriptWindowObject(const QString &name, QObject *object, QScriptEngine::ValueOwnership ownership = QScriptEngine::QtOwnership);
+#endif
     QString toHtml() const;
     QString toPlainText() const;
     QString renderTreeDump() const;

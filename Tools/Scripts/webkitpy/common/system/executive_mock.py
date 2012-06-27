@@ -34,10 +34,12 @@ from webkitpy.common.system.executive import ScriptError
 
 
 class MockProcess(object):
-    def __init__(self, stdout='MOCK STDOUT\n'):
+    def __init__(self, stdout='MOCK STDOUT\n', stderr=''):
         self.pid = 42
         self.stdout = StringIO.StringIO(stdout)
+        self.stderr = StringIO.StringIO(stderr)
         self.stdin = StringIO.StringIO()
+        self.returncode = 0
 
     def wait(self):
         return
@@ -108,6 +110,11 @@ class MockExecutive(object):
             self._proc = MockProcess()
         return self._proc
 
+    def run_in_parallel(self, commands):
+        command_outputs = []
+        for cmd_line, cwd in commands:
+            command_outputs.append([0, self.run_command(cmd_line, cwd=cwd), ''])
+        return command_outputs
 
 class MockExecutive2(object):
     @staticmethod

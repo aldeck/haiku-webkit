@@ -87,6 +87,19 @@ void RenderSVGContainer::layout()
     setNeedsLayout(false);
 }
 
+void RenderSVGContainer::addChild(RenderObject* child, RenderObject* beforeChild)
+{
+    RenderSVGModelObject::addChild(child, beforeChild);
+    SVGResourcesCache::clientWasAddedToTree(child, child->style());
+}
+
+void RenderSVGContainer::removeChild(RenderObject* child)
+{
+    SVGResourcesCache::clientWillBeRemovedFromTree(child);
+    RenderSVGModelObject::removeChild(child);
+}
+
+
 bool RenderSVGContainer::selfWillPaint()
 {
     SVGResources* resources = SVGResourcesCache::cachedResourcesForRenderObject(this);
@@ -150,11 +163,6 @@ void RenderSVGContainer::addFocusRingRects(Vector<IntRect>& rects, const LayoutP
 
 void RenderSVGContainer::updateCachedBoundaries()
 {
-    m_objectBoundingBox = FloatRect();
-    m_objectBoundingBoxValid = false;
-    m_strokeBoundingBox = FloatRect();
-    m_repaintBoundingBox = FloatRect();
-
     SVGRenderSupport::computeContainerBoundingBoxes(this, m_objectBoundingBox, m_objectBoundingBoxValid, m_strokeBoundingBox, m_repaintBoundingBox);
     SVGRenderSupport::intersectRepaintRectWithResources(this, m_repaintBoundingBox);
 }

@@ -35,6 +35,7 @@
 #include <wininet.h> // for INTERNET_MAX_URL_LENGTH
 #include <wtf/StringExtras.h>
 #include <wtf/text/CString.h>
+#include <wtf/text/StringBuilder.h>
 #include <wtf/text/WTFString.h>
 
 #if USE(CF)
@@ -298,9 +299,15 @@ void markupToCFHTML(const String& markup, const String& srcURL, Vector<char>& re
 
 void replaceNewlinesWithWindowsStyleNewlines(String& str)
 {
-    static const UChar Newline = '\n';
-    static const char* const WindowsNewline("\r\n");
-    str.replace(Newline, WindowsNewline);
+    DEFINE_STATIC_LOCAL(String, windowsNewline, ("\r\n"));
+    StringBuilder result;
+    for (unsigned index = 0; index < str.length(); ++index) {
+        if (str[index] != '\n' || (index > 0 && str[index - 1] == '\r'))
+            result.append(str[index]);
+        else
+            result.append(windowsNewline);
+    }
+    str = result.toString();
 }
 
 void replaceNBSPWithSpace(String& str)
@@ -631,7 +638,7 @@ PassRefPtr<DocumentFragment> fragmentFromCFHTML(Document* doc, const String& cfh
     }
 
     String markup = extractMarkupFromCFHTML(cfhtml);
-    return createFragmentFromMarkup(doc, markup, srcURL, FragmentScriptingNotAllowed);
+    return createFragmentFromMarkup(doc, markup, srcURL, DisallowScriptingContent);
 }
 
 PassRefPtr<DocumentFragment> fragmentFromHTML(Document* doc, IDataObject* data) 
@@ -648,7 +655,7 @@ PassRefPtr<DocumentFragment> fragmentFromHTML(Document* doc, IDataObject* data)
     String html = getTextHTML(data);
     String srcURL;
     if (!html.isEmpty())
-        return createFragmentFromMarkup(doc, html, srcURL, FragmentScriptingNotAllowed);
+        return createFragmentFromMarkup(doc, html, srcURL, DisallowScriptingContent);
 
     return 0;
 }
@@ -666,7 +673,7 @@ PassRefPtr<DocumentFragment> fragmentFromHTML(Document* document, const DragData
 
     String srcURL;
     if (getDataMapItem(data, texthtmlFormat(), stringData))
-        return createFragmentFromMarkup(document, stringData, srcURL, FragmentScriptingNotAllowed);
+        return createFragmentFromMarkup(document, stringData, srcURL, DisallowScriptingContent);
 
     return 0;
 }

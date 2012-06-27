@@ -27,12 +27,13 @@
 #include "AccessibilityObject.h"
 #include "AnimationController.h"
 #include "CSSComputedStyleDeclaration.h"
+#include "Chrome.h"
+#include "ChromeClientGtk.h"
 #include "DOMWrapperWorld.h"
 #include "Document.h"
 #include "EditorClientGtk.h"
 #include "Element.h"
 #include "FocusController.h"
-#include "FrameLoaderClientGtk.h"
 #include "FrameTree.h"
 #include "FrameView.h"
 #include "GCController.h"
@@ -56,6 +57,7 @@
 #include "RenderListItem.h"
 #include "RenderTreeAsText.h"
 #include "RenderView.h"
+#include "ResourceLoadScheduler.h"
 #include "SchemeRegistry.h"
 #include "SecurityOrigin.h"
 #include "SecurityPolicy.h"
@@ -132,10 +134,9 @@ GSList* DumpRenderTreeSupportGtk::getFrameChildren(WebKitWebFrame* frame)
 
     GSList* children = 0;
     for (Frame* child = coreFrame->tree()->firstChild(); child; child = child->tree()->nextSibling()) {
-        FrameLoader* loader = child->loader();
-        WebKit::FrameLoaderClient* client = static_cast<WebKit::FrameLoaderClient*>(loader->client());
-        if (client)
-          children = g_slist_append(children, client->webFrame());
+        WebKitWebFrame* kitFrame = kit(child);
+        if (kitFrame)
+          children = g_slist_append(children, kitFrame);
     }
 
     return children;
@@ -185,28 +186,6 @@ CString DumpRenderTreeSupportGtk::dumpRenderTree(WebKitWebFrame* frame)
         view->layout();
 
     return externalRepresentation(coreFrame).utf8();
-}
-
-/**
- * counterValueForElementById:
- * @frame: a #WebKitWebFrame
- * @id: an element ID string
- *
- * Return value: The counter value of element @id in @frame
- */
-CString DumpRenderTreeSupportGtk::counterValueForElementById(WebKitWebFrame* frame, const char* id)
-{
-    g_return_val_if_fail(WEBKIT_IS_WEB_FRAME(frame), CString());
-
-    Frame* coreFrame = core(frame);
-    if (!coreFrame)
-        return CString();
-
-    Element* coreElement = coreFrame->document()->getElementById(AtomicString(id));
-    if (!coreElement)
-        return CString();
-
-    return counterValueForElement(coreElement).utf8();
 }
 
 /**
@@ -268,24 +247,6 @@ CString DumpRenderTreeSupportGtk::pageProperty(WebKitWebFrame* frame, const char
         return CString();
 
     return PrintContext::pageProperty(coreFrame, propertyName, pageNumber).utf8();
-}
-
-/**
- * isPageBoxVisible
- * @frame: a #WebKitWebFrame
- * @pageNumber: number of a page 
- *
- * Return value: TRUE if a page box is visible. 
- */
-bool DumpRenderTreeSupportGtk::isPageBoxVisible(WebKitWebFrame* frame, int pageNumber)
-{
-    g_return_val_if_fail(WEBKIT_IS_WEB_FRAME(frame), false);
-
-    Frame* coreFrame = core(frame);
-    if (!coreFrame)
-        return false;
-
-    return coreFrame->document()->isPageBoxVisible(pageNumber); 
 }
 
 /**
@@ -379,24 +340,6 @@ unsigned int DumpRenderTreeSupportGtk::numberOfActiveAnimations(WebKitWebFrame* 
         return 0;
 
     return coreFrame->animation()->numberOfActiveAnimations(coreFrame->document());
-}
-
-void DumpRenderTreeSupportGtk::suspendAnimations(WebKitWebFrame* frame)
-{
-    Frame* coreFrame = core(frame);
-    if (!coreFrame)
-        return;
-
-    return coreFrame->animation()->suspendAnimations();
-}
-
-void DumpRenderTreeSupportGtk::resumeAnimations(WebKitWebFrame* frame)
-{
-    Frame* coreFrame = core(frame);
-    if (!coreFrame)
-        return;
-
-    return coreFrame->animation()->resumeAnimations();
 }
 
 void DumpRenderTreeSupportGtk::clearMainFrameName(WebKitWebFrame* frame)
@@ -609,6 +552,11 @@ bool DumpRenderTreeSupportGtk::selectedRange(WebKitWebView* webView, int* start,
     return true;
 }
 
+void DumpRenderTreeSupportGtk::setDefersLoading(WebKitWebView* webView, bool defers)
+{
+    core(webView)->setDefersLoading(defers);
+}
+
 void DumpRenderTreeSupportGtk::setSmartInsertDeleteEnabled(WebKitWebView* webView, bool enabled)
 {
     g_return_if_fail(WEBKIT_IS_WEB_VIEW(webView));
@@ -616,6 +564,13 @@ void DumpRenderTreeSupportGtk::setSmartInsertDeleteEnabled(WebKitWebView* webVie
 
     WebKit::EditorClient* client = static_cast<WebKit::EditorClient*>(core(webView)->editorClient());
     client->setSmartInsertDeleteEnabled(enabled);
+}
+
+void DumpRenderTreeSupportGtk::forceWebViewPaint(WebKitWebView* webView)
+{
+    g_return_if_fail(WEBKIT_IS_WEB_VIEW(webView));
+
+    static_cast<WebKit::ChromeClient*>(core(webView)->chrome()->client())->forcePaint();
 }
 
 void DumpRenderTreeSupportGtk::whiteListAccessFromOrigin(const gchar* sourceOrigin, const gchar* destinationProtocol, const gchar* destinationHost, bool allowDestinationSubdomains)
@@ -671,7 +626,7 @@ void DumpRenderTreeSupportGtk::dumpConfigurationForViewport(WebKitWebView* webVi
     ViewportAttributes attrs = computeViewportAttributes(arguments, /* default layout width for non-mobile pages */ 980, deviceWidth, deviceHeight, deviceDPI, IntSize(availableWidth, availableHeight));
     restrictMinimumScaleFactorToViewportSize(attrs, IntSize(availableWidth, availableHeight));
     restrictScaleFactorToInitialScaleIfNotUserScalable(attrs);
-    fprintf(stdout, "viewport size %dx%d scale %f with limits [%f, %f] and userScalable %f\n", attrs.layoutSize.width(), attrs.layoutSize.height(), attrs.initialScale, attrs.minimumScale, attrs.maximumScale, attrs.userScalable);
+    fprintf(stdout, "viewport size %dx%d scale %f with limits [%f, %f] and userScalable %f\n", static_cast<int>(attrs.layoutSize.width()), static_cast<int>(attrs.layoutSize.height()), attrs.initialScale, attrs.minimumScale, attrs.maximumScale, attrs.userScalable);
 }
 
 void DumpRenderTreeSupportGtk::clearOpener(WebKitWebFrame* frame)
@@ -703,31 +658,6 @@ double DumpRenderTreeSupportGtk::defaultMinimumTimerInterval()
 void DumpRenderTreeSupportGtk::setMinimumTimerInterval(WebKitWebView* webView, double interval)
 {
     core(webView)->settings()->setMinDOMTimerInterval(interval);
-}
-
-static void modifyAccessibilityValue(AtkObject* axObject, bool increment)
-{
-    if (!axObject || !WEBKIT_IS_ACCESSIBLE(axObject))
-        return;
-
-    AccessibilityObject* coreObject = webkitAccessibleGetAccessibilityObject(WEBKIT_ACCESSIBLE(axObject));
-    if (!coreObject)
-        return;
-
-    if (increment)
-        coreObject->increment();
-    else
-        coreObject->decrement();
-}
-
-void DumpRenderTreeSupportGtk::incrementAccessibilityValue(AtkObject* axObject)
-{
-    modifyAccessibilityValue(axObject, true);
-}
-
-void DumpRenderTreeSupportGtk::decrementAccessibilityValue(AtkObject* axObject)
-{
-    modifyAccessibilityValue(axObject, false);
 }
 
 CString DumpRenderTreeSupportGtk::accessibilityHelpText(AtkObject* axObject)
@@ -915,4 +845,60 @@ void DumpRenderTreeSupportGtk::deliverAllMutationsIfNecessary()
 void DumpRenderTreeSupportGtk::setDomainRelaxationForbiddenForURLScheme(bool forbidden, const char* urlScheme)
 {
     SchemeRegistry::setDomainRelaxationForbiddenForURLScheme(forbidden, String::fromUTF8(urlScheme));
+}
+
+void DumpRenderTreeSupportGtk::setSerializeHTTPLoads(bool enabled)
+{
+    resourceLoadScheduler()->setSerialLoadingEnabled(enabled);
+}
+
+void DumpRenderTreeSupportGtk::setTracksRepaints(WebKitWebFrame* frame, bool tracks)
+{
+    g_return_if_fail(WEBKIT_IS_WEB_FRAME(frame));
+
+    Frame* coreFrame = core(frame);
+    if (coreFrame && coreFrame->view())
+        coreFrame->view()->setTracksRepaints(tracks);
+}
+
+bool DumpRenderTreeSupportGtk::isTrackingRepaints(WebKitWebFrame* frame)
+{
+    g_return_val_if_fail(WEBKIT_IS_WEB_FRAME(frame), false);
+
+    Frame* coreFrame = core(frame);
+    if (coreFrame && coreFrame->view())
+        return coreFrame->view()->isTrackingRepaints();
+
+    return false;
+}
+
+GSList* DumpRenderTreeSupportGtk::trackedRepaintRects(WebKitWebFrame* frame)
+{
+    g_return_val_if_fail(WEBKIT_IS_WEB_FRAME(frame), 0);
+
+    Frame* coreFrame = core(frame);
+    if (!coreFrame || !coreFrame->view())
+        return 0;
+
+    GSList* rects = 0;
+    const Vector<IntRect>& repaintRects = coreFrame->view()->trackedRepaintRects();
+    for (unsigned i = 0; i < repaintRects.size(); i++) {
+        GdkRectangle* rect = g_new0(GdkRectangle, 1);
+        rect->x = repaintRects[i].x();
+        rect->y = repaintRects[i].y();
+        rect->width = repaintRects[i].width();
+        rect->height = repaintRects[i].height();
+        rects = g_slist_append(rects, rect);
+    }
+
+    return rects;
+}
+
+void DumpRenderTreeSupportGtk::resetTrackedRepaints(WebKitWebFrame* frame)
+{
+    g_return_if_fail(WEBKIT_IS_WEB_FRAME(frame));
+
+    Frame* coreFrame = core(frame);
+    if (coreFrame && coreFrame->view())
+        coreFrame->view()->resetTrackedRepaints();
 }

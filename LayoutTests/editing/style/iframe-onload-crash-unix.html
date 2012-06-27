@@ -1,7 +1,7 @@
 <meta><input><h6><nobr></nobr><datagrid><ins><button><em><iframe onload="
-if (window.layoutTestController) {
-    layoutTestController.dumpAsText();
-    layoutTestController.setEditingBehavior('unix');
+if (window.testRunner && window.internals) {
+    testRunner.dumpAsText();
+    internals.settings.setEditingBehavior('unix');
 }
 
 if (document.counter)

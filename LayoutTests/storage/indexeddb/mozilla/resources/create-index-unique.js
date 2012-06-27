@@ -16,8 +16,7 @@ function test()
     removeVendorPrefixes();
 
     name = self.location.pathname;
-    description = "My Test Database";
-    request = evalAndLog("indexedDB.open(name, description)");
+    request = evalAndLog("indexedDB.open(name)");
     request.onsuccess = openSuccess;
     request.onerror = unexpectedErrorCallback;
 }
@@ -53,8 +52,7 @@ function createAndVerifyIndex()
     }
     shouldBeTrue("foundNewlyCreatedIndex");
     shouldBe("event.target.transaction.db", "db");
-    shouldBe("event.target.transaction.readyState", "IDBTransaction.LOADING");
-    shouldBe("event.target.transaction.mode", "IDBTransaction.VERSION_CHANGE");
+    shouldBe("event.target.transaction.mode", "'versionchange'");
     finishJSTest();
 }
 

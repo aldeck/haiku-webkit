@@ -48,10 +48,13 @@ class PlatformInfo(object):
         self.os_name = self._determine_os_name(sys_module.platform)
         if self.os_name == 'linux':
             self.os_version = self._determine_linux_version()
+        if self.os_name == 'freebsd':
+            self.os_version = platform_module.release()
         if self.os_name.startswith('mac'):
             self.os_version = self._determine_mac_version(platform_module.mac_ver()[0])
         if self.os_name.startswith('win'):
             self.os_version = self._determine_win_version(self._win_version_tuple(sys_module))
+        self._is_cygwin = sys_module.platform == 'cygwin'
 
     def is_mac(self):
         return self.os_name == 'mac'
@@ -59,8 +62,14 @@ class PlatformInfo(object):
     def is_win(self):
         return self.os_name == 'win'
 
+    def is_cygwin(self):
+        return self._is_cygwin
+
     def is_linux(self):
         return self.os_name == 'linux'
+
+    def is_freebsd(self):
+        return self.os_name == 'freebsd'
 
     def display_name(self):
         # platform.platform() returns Darwin information for Mac, which is just confusing.
@@ -72,18 +81,9 @@ class PlatformInfo(object):
         # Windows-2008ServerR2-6.1.7600
         return self._platform_module.platform()
 
-    def free_bytes_memory(self):
-        if self.is_mac():
-            vm_stat_output = self._executive.run_command(["vm_stat"])
-            free_bytes = self._compute_bytes_from_vm_stat_output("Pages free", vm_stat_output)
-            # Per https://bugs.webkit.org/show_bug.cgi?id=74650 include inactive memory since the OS is lazy about freeing memory.
-            free_bytes += self._compute_bytes_from_vm_stat_output("Pages inactive", vm_stat_output)
-            return free_bytes
-        return None
-
     def total_bytes_memory(self):
         if self.is_mac():
-            return int(self._executive.run_command(["sysctl", "-n", "hw.memsize"]))
+            return long(self._executive.run_command(["sysctl", "-n", "hw.memsize"]))
         return None
 
     def _determine_os_name(self, sys_platform):
@@ -93,6 +93,8 @@ class PlatformInfo(object):
             return 'linux'
         if sys_platform in ('win32', 'cygwin'):
             return 'win'
+        if sys_platform.startswith('freebsd'):
+            return 'freebsd'
         raise AssertionError('unrecognized platform string "%s"' % sys_platform)
 
     def _determine_mac_version(self, mac_version_string):
@@ -130,14 +132,3 @@ class PlatformInfo(object):
         match_object = re.search(r'(?P<major>\d)\.(?P<minor>\d)\.(?P<build>\d+)', ver_output)
         assert match_object, 'cmd returned an unexpected version string: ' + ver_output
         return tuple(map(int, match_object.groups()))
-
-    def _compute_bytes_from_vm_stat_output(self, label_text, vm_stat_output):
-        page_size_match = re.search(r"page size of (\d+) bytes", vm_stat_output)
-        free_pages_match = re.search(r"%s:\s+(\d+)." % label_text, vm_stat_output)
-
-        # Fail hard if vmstat's output isn't what we expect.
-        assert(page_size_match and free_pages_match)
-
-        free_page_count = int(free_pages_match.group(1))
-        page_size = int(page_size_match.group(1))
-        return free_page_count * page_size

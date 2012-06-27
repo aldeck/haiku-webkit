@@ -35,6 +35,14 @@
 #include <gdk/gdk.h>
 #include <gtk/gtk.h>
 
+#if defined(GDK_WINDOWING_X11)
+#define Region XRegion
+#define Font XFont
+#define Cursor XCursor
+#define Screen XScreen
+#include <gdk/gdkx.h>
+#endif
+
 using namespace WebCore;
 
 namespace WebKit {
@@ -59,13 +67,20 @@ bool AcceleratedCompositingContext::enabled()
 
 GLContext* AcceleratedCompositingContext::glContext()
 {
-    GLContext* context = GLContext::getContextForWidget(GTK_WIDGET(m_webView));
-    if (!context->canRenderToDefaultFramebuffer())
-        return 0;
-    return context;
+    if (m_context)
+        return m_context.get();
+
+#if defined(GDK_WINDOWING_X11)
+    // FIXME: Gracefully account for situations where we do not have a realized window.
+    GdkWindow* gdkWindow = gtk_widget_get_window(GTK_WIDGET(m_webView));
+    if (gdkWindow && gdk_window_has_native(gdkWindow))
+        m_context = GLContext::createContextForWindow(GDK_WINDOW_XID(gdkWindow), GLContext::sharingContext());
+#endif
+
+    return m_context.get();
 }
 
-bool AcceleratedCompositingContext::renderLayersToWindow(const IntRect& clipRect)
+bool AcceleratedCompositingContext::renderLayersToWindow(cairo_t*, const IntRect& clipRect)
 {
     if (!enabled())
         return false;
@@ -94,6 +109,7 @@ void AcceleratedCompositingContext::attachRootGraphicsLayer(GraphicsLayer* graph
     if (!graphicsLayer) {
         m_rootGraphicsLayer.clear();
         m_rootTextureMapperLayer = 0;
+        m_context.clear();
         return;
     }
 
@@ -173,10 +189,10 @@ void AcceleratedCompositingContext::syncLayersTimeout()
     if (!m_rootGraphicsLayer)
         return;
 
-    renderLayersToWindow(IntRect());
-
     if (toTextureMapperLayer(m_rootGraphicsLayer.get())->descendantsOrSelfHaveRunningAnimations())
         m_syncTimerCallbackId = g_timeout_add_full(GDK_PRIORITY_EVENTS, 1000.0 / 60.0, reinterpret_cast<GSourceFunc>(syncLayersTimeoutCallback), this, 0);
+
+    renderLayersToWindow(0, IntRect());
 }
 
 void AcceleratedCompositingContext::notifyAnimationStarted(const GraphicsLayer*, double time)

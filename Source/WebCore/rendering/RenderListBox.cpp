@@ -358,7 +358,8 @@ static LayoutSize itemOffsetForAlignment(TextRun textRun, RenderStyle* itemStyle
 {
     ETextAlign actualAlignment = itemStyle->textAlign();
     // FIXME: Firefox doesn't respect JUSTIFY. Should we?
-    if (actualAlignment == TAAUTO || actualAlignment == JUSTIFY)
+    // FIXME: Handle TAEND here
+    if (actualAlignment == TASTART || actualAlignment == JUSTIFY)
       actualAlignment = itemStyle->isLeftToRightDirection() ? LEFT : RIGHT;
 
     LayoutSize offset = LayoutSize(0, itemFont.fontMetrics().ascent());
@@ -407,9 +408,7 @@ void RenderListBox::paintItemForeground(PaintInfo& paintInfo, const LayoutPoint&
     ColorSpace colorSpace = itemStyle->colorSpace();
     paintInfo.context->setFillColor(textColor, colorSpace);
 
-    unsigned length = itemText.length();
-    const UChar* string = itemText.characters();
-    TextRun textRun(string, length, false, 0, 0, TextRun::AllowTrailingExpansion, itemStyle->direction(), isOverride(itemStyle->unicodeBidi()), true, TextRun::NoRounding);
+    TextRun textRun(itemText, 0, 0, TextRun::AllowTrailingExpansion, itemStyle->direction(), isOverride(itemStyle->unicodeBidi()), true, TextRun::NoRounding);
     Font itemFont = style()->font();
     LayoutRect r = itemBoundingBoxRect(paintOffset, listIndex);
     r.move(itemOffsetForAlignment(textRun, itemStyle, itemFont, r));
@@ -678,7 +677,7 @@ void RenderListBox::setScrollTop(int newTop)
     scrollToOffsetWithoutAnimation(VerticalScrollbar, index);
 }
 
-bool RenderListBox::nodeAtPoint(const HitTestRequest& request, HitTestResult& result, const LayoutPoint& pointInContainer, const LayoutPoint& accumulatedOffset, HitTestAction hitTestAction)
+bool RenderListBox::nodeAtPoint(const HitTestRequest& request, HitTestResult& result, const HitTestPoint& pointInContainer, const LayoutPoint& accumulatedOffset, HitTestAction hitTestAction)
 {
     if (!RenderBlock::nodeAtPoint(request, result, pointInContainer, accumulatedOffset, hitTestAction))
         return false;
@@ -687,12 +686,12 @@ bool RenderListBox::nodeAtPoint(const HitTestRequest& request, HitTestResult& re
     LayoutPoint adjustedLocation = accumulatedOffset + location();
 
     for (int i = 0; i < size; ++i) {
-        if (itemBoundingBoxRect(adjustedLocation, i).contains(pointInContainer)) {
+        if (itemBoundingBoxRect(adjustedLocation, i).contains(pointInContainer.point())) {
             if (Element* node = listItems[i]) {
                 result.setInnerNode(node);
                 if (!result.innerNonSharedNode())
                     result.setInnerNonSharedNode(node);
-                result.setLocalPoint(pointInContainer - toLayoutSize(adjustedLocation));
+                result.setLocalPoint(pointInContainer.point() - toLayoutSize(adjustedLocation));
                 break;
             }
         }
@@ -831,7 +830,7 @@ PassRefPtr<Scrollbar> RenderListBox::createScrollbar()
     RefPtr<Scrollbar> widget;
     bool hasCustomScrollbarStyle = style()->hasPseudoStyle(SCROLLBAR);
     if (hasCustomScrollbarStyle)
-        widget = RenderScrollbar::createCustomScrollbar(this, VerticalScrollbar, this);
+        widget = RenderScrollbar::createCustomScrollbar(this, VerticalScrollbar, this->node());
     else {
         widget = Scrollbar::createNativeScrollbar(this, VerticalScrollbar, theme()->scrollbarControlSizeForPart(ListboxPart));
         didAddVerticalScrollbar(widget.get());

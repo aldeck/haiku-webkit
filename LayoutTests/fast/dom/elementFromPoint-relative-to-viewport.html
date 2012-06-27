@@ -18,6 +18,9 @@
         height: 1000px;
         outline: 1px solid black;
     }
+    #subpixel-test {
+      width: 4.5px;
+    }
 </style>
 <div id="testArea">
     <br>
@@ -34,12 +37,12 @@
         alert(e.clientX + " " + e.clientY + " " + document.elementFromPoint(e.clientX, e.clientY).textContent);
     }
 
-    if (window.layoutTestController)
-        layoutTestController.dumpAsText();
+    if (window.testRunner)
+        testRunner.dumpAsText();
 
     description('This test document.elementFromPoint is evaluated in with respect to the viewport, not the document.');
 
-    function testElement(element, label, offsetX, offsetY) {
+    function testElement(element, label, offsetX, offsetY, hasZoom) {
         for (var i = 0; i < 25; ++i) {
             var item = document.createElement("div");
             item.className = "testItem";
@@ -92,9 +95,9 @@
     testElement(elementOffscreen, "Offscreen", offset.left, offset.top + 1100);
 
     eventSender.zoomPageOut();
-    testElement(elementInitial, "Initial", offset.left, offset.top);
+    testElement(elementInitial, "Initial", offset.left, offset.top, /* hasZoom */ true);
 
-    if (window.layoutTestController) {
+    if (window.testRunner) {
         var area = document.getElementById('testArea');
         area.parentNode.removeChild(area);
     }

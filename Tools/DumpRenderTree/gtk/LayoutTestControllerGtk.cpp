@@ -102,17 +102,6 @@ void LayoutTestController::display()
     displayWebView();
 }
 
-JSRetainPtr<JSStringRef> LayoutTestController::counterValueForElementById(JSStringRef id)
-{
-    gchar* idGChar = JSStringCopyUTF8CString(id);
-    CString counterValueGChar = DumpRenderTreeSupportGtk::counterValueForElementById(mainFrame, idGChar);
-    g_free(idGChar);
-    if (counterValueGChar.isNull())
-        return 0;
-    JSRetainPtr<JSStringRef> counterValue(Adopt, JSStringCreateWithUTF8CString(counterValueGChar.data()));
-    return counterValue;
-}
-
 void LayoutTestController::keepWebHistory()
 {
     // FIXME: implement
@@ -147,11 +136,6 @@ JSRetainPtr<JSStringRef> LayoutTestController::pageProperty(const char* property
 {
     JSRetainPtr<JSStringRef> propertyValue(Adopt, JSStringCreateWithUTF8CString(DumpRenderTreeSupportGtk::pageProperty(mainFrame, propertyName, pageNumber).data()));
     return propertyValue;
-}
-
-bool LayoutTestController::isPageBoxVisible(int pageNumber) const
-{
-    return DumpRenderTreeSupportGtk::isPageBoxVisible(mainFrame, pageNumber);
 }
 
 JSRetainPtr<JSStringRef> LayoutTestController::pageSizeAndMarginsInPixels(int pageNumber, int width, int height, int marginTop, int marginRight, int marginBottom, int marginLeft) const
@@ -545,17 +529,6 @@ void LayoutTestController::setIconDatabaseEnabled(bool enabled)
         webkit_icon_database_set_path(database, 0);
 }
 
-void LayoutTestController::setJavaScriptProfilingEnabled(bool flag)
-{
-    WebKitWebView* view = webkit_web_frame_get_web_view(mainFrame);
-    ASSERT(view);
-
-    setDeveloperExtrasEnabled(flag);
-
-    WebKitWebInspector* inspector = webkit_web_view_get_inspector(view);
-    g_object_set(G_OBJECT(inspector), "javascript-profiling-enabled", flag, NULL);
-}
-
 void LayoutTestController::setSelectTrailingWhitespaceEnabled(bool flag)
 {
     DumpRenderTreeSupportGtk::setSelectTrailingWhitespaceEnabled(flag);
@@ -656,8 +629,8 @@ void LayoutTestController::setCacheModel(int cacheModel)
     case 1:
         webkit_set_cache_model(WEBKIT_CACHE_MODEL_DOCUMENT_BROWSER);
         break;
-    case 3:
-        webkit_set_cache_model(WEBKIT_CACHE_MODEL_DOCUMENT_BROWSER);
+    case 2:
+        webkit_set_cache_model(WEBKIT_CACHE_MODEL_WEB_BROWSER);
         break;
     default:
         ASSERT_NOT_REACHED();
@@ -752,12 +725,14 @@ void LayoutTestController::setDomainRelaxationForbiddenForURLScheme(bool forbidd
 
 void LayoutTestController::goBack()
 {
-    // FIXME: implement to enable loader/navigation-while-deferring-loads.html
+    WebKitWebView* webView = webkit_web_frame_get_web_view(mainFrame);
+    webkit_web_view_go_back(webView);
 }
 
-void LayoutTestController::setDefersLoading(bool)
+void LayoutTestController::setDefersLoading(bool defers)
 {
-    // FIXME: implement to enable loader/navigation-while-deferring-loads.html
+    WebKitWebView* webView = webkit_web_frame_get_web_view(mainFrame);
+    DumpRenderTreeSupportGtk::setDefersLoading(webView, defers);
 }
 
 void LayoutTestController::setAppCacheMaximumSize(unsigned long long size)
@@ -788,16 +763,6 @@ bool LayoutTestController::pauseTransitionAtTimeOnElementWithId(JSStringRef prop
 unsigned LayoutTestController::numberOfActiveAnimations() const
 {
     return DumpRenderTreeSupportGtk::numberOfActiveAnimations(mainFrame);
-}
-
-void LayoutTestController::suspendAnimations() const
-{
-    DumpRenderTreeSupportGtk::suspendAnimations(mainFrame);
-}
-
-void LayoutTestController::resumeAnimations() const
-{
-    DumpRenderTreeSupportGtk::resumeAnimations(mainFrame);
 }
 
 static gboolean booleanFromValue(gchar* value)
@@ -968,19 +933,6 @@ void LayoutTestController::authenticateSession(JSStringRef, JSStringRef, JSStrin
 {
 }
 
-void LayoutTestController::setEditingBehavior(const char* editingBehavior)
-{
-    WebKitWebView* webView = webkit_web_frame_get_web_view(mainFrame);
-    WebKitWebSettings* settings = webkit_web_view_get_settings(webView);
-
-    if (!strcmp(editingBehavior, "win"))
-        g_object_set(G_OBJECT(settings), "editing-behavior", WEBKIT_EDITING_BEHAVIOR_WINDOWS, NULL);
-    else if (!strcmp(editingBehavior, "mac"))
-        g_object_set(G_OBJECT(settings), "editing-behavior", WEBKIT_EDITING_BEHAVIOR_MAC, NULL);
-    else if (!strcmp(editingBehavior, "unix"))
-        g_object_set(G_OBJECT(settings), "editing-behavior", WEBKIT_EDITING_BEHAVIOR_UNIX, NULL);
-}
-
 void LayoutTestController::abortModal()
 {
 }
@@ -992,9 +944,9 @@ void LayoutTestController::dumpConfigurationForViewport(int deviceDPI, int devic
     DumpRenderTreeSupportGtk::dumpConfigurationForViewport(webView, deviceDPI, deviceWidth, deviceHeight, availableWidth, availableHeight);
 }
 
-void LayoutTestController::setSerializeHTTPLoads(bool)
+void LayoutTestController::setSerializeHTTPLoads(bool serialize)
 {
-    // FIXME: Implement if needed for https://bugs.webkit.org/show_bug.cgi?id=50758.
+    DumpRenderTreeSupportGtk::setSerializeHTTPLoads(serialize);
 }
 
 void LayoutTestController::setMinimumTimerInterval(double minimumTimerInterval)
@@ -1006,10 +958,6 @@ void LayoutTestController::setMinimumTimerInterval(double minimumTimerInterval)
 void LayoutTestController::setTextDirection(JSStringRef direction)
 {
     // FIXME: Implement.
-}
-
-void LayoutTestController::allowRoundingHacks()
-{
 }
 
 void LayoutTestController::addChromeInputField()
@@ -1030,4 +978,29 @@ void LayoutTestController::setBackingScaleFactor(double)
 
 void LayoutTestController::simulateDesktopNotificationClick(JSStringRef title)
 {
+}
+
+void LayoutTestController::resetPageVisibility()
+{
+    // FIXME: Implement this.
+}
+
+void LayoutTestController::setPageVisibility(const char*)
+{
+    // FIXME: Implement this.
+}
+
+void LayoutTestController::setAutomaticLinkDetectionEnabled(bool)
+{
+    // FIXME: Implement this.
+}
+
+void LayoutTestController::sendWebIntentResponse(JSStringRef)
+{
+    // FIXME: Implement this.
+}
+
+void LayoutTestController::deliverWebIntent(JSStringRef, JSStringRef, JSStringRef)
+{
+    // FIXME: Implement this.
 }

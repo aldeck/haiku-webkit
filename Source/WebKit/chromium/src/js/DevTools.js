@@ -41,6 +41,8 @@
     Preferences.exposeDisableCache = true;
     Preferences.exposeWorkersInspection = true;
     Preferences.showDockToRight = true;
+    Preferences.exposeFileSystemInspection = true;
+    Preferences.displayInitiator = true;
 })();}
 
 function buildPlatformExtensionAPI(extensionInfo)
@@ -53,4 +55,9 @@ function buildPlatformExtensionAPI(extensionInfo)
 WebInspector.setInspectedTabId = function(tabId)
 {
     WebInspector._inspectedTabId = tabId;
+}
+
+WebInspector.clipboardAccessDeniedMessage = function()
+{
+    return "You need to install a Chrome extension that grants clipboard access to Developer Tools.";
 }

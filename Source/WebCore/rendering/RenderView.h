@@ -37,6 +37,10 @@ class RenderWidget;
 class RenderLayerCompositor;
 #endif
 
+#if ENABLE(CSS_SHADERS) && ENABLE(WEBGL)
+class CustomFilterGlobalContext;
+#endif
+
 class RenderView : public RenderBlock {
 public:
     RenderView(Node*, FrameView*);
@@ -168,6 +172,10 @@ public:
     bool usesCompositing() const;
 #endif
 
+#if ENABLE(CSS_SHADERS) && ENABLE(WEBGL)
+    CustomFilterGlobalContext* customFilterGlobalContext();
+#endif
+
     IntRect unscaledDocumentRect() const;
     LayoutRect backgroundRect(RenderBox* backgroundRenderer) const;
 
@@ -183,11 +191,10 @@ public:
     IntSize viewportSize() const { return document()->viewportSize(); }
 
     void setFixedPositionedObjectsNeedLayout();
-    void insertFixedPositionedObject(RenderBox*);
-    void removeFixedPositionedObject(RenderBox*);
 
 protected:
-    virtual void mapLocalToContainer(RenderBoxModelObject* repaintContainer, bool useTransforms, bool fixed, TransformState&, bool* wasFixed = 0) const;
+    virtual void mapLocalToContainer(RenderBoxModelObject* repaintContainer, bool useTransforms, bool fixed, TransformState&, ApplyContainerFlipOrNot = ApplyContainerFlip, bool* wasFixed = 0) const;
+    virtual const RenderObject* pushMappingToContainer(const RenderBoxModelObject* ancestorToStopAt, RenderGeometryMap&) const;
     virtual void mapAbsoluteToLocalPoint(bool fixed, bool useTransforms, TransformState&) const;
     virtual bool requiresColumns(int desiredColumnCount) const OVERRIDE;
 
@@ -266,12 +273,17 @@ protected:
     OwnPtr<RenderBoxSet> m_fixedPositionedElements;
 
 private:
+    bool shouldUsePrintingLayout() const;
+
     unsigned m_pageLogicalHeight;
     bool m_pageLogicalHeightChanged;
     LayoutState* m_layoutState;
     unsigned m_layoutStateDisableCount;
 #if USE(ACCELERATED_COMPOSITING)
     OwnPtr<RenderLayerCompositor> m_compositor;
+#endif
+#if ENABLE(CSS_SHADERS) && ENABLE(WEBGL)
+    OwnPtr<CustomFilterGlobalContext> m_customFilterGlobalContext;
 #endif
     OwnPtr<FlowThreadController> m_flowThreadController;
     RefPtr<IntervalArena> m_intervalArena;

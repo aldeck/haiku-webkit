@@ -137,7 +137,7 @@ int RenderMarquee::computePosition(EMarqueeDirection dir, bool stopAtContentEdge
         }
     }
     else {
-        int contentHeight = box->maxYLayoutOverflow() - box->borderTop() + box->paddingBottom();
+        int contentHeight = box->layoutOverflowRect().maxY() - box->borderTop() + box->paddingBottom();
         int clientHeight = box->clientHeight();
         if (dir == MUP) {
             if (stopAtContentEdge)
@@ -167,9 +167,9 @@ void RenderMarquee::start()
 
     if (!m_suspended && !m_stopped) {
         if (isHorizontal())
-            m_layer->scrollToOffset(m_start, 0);
+            m_layer->scrollToOffset(IntSize(m_start, 0));
         else
-            m_layer->scrollToOffset(0, m_start);
+            m_layer->scrollToOffset(IntSize(0, m_start));
     }
     else {
         m_suspended = false;
@@ -230,7 +230,7 @@ void RenderMarquee::updateMarqueeStyle()
         // FIXME: Bring these up with the CSS WG.
         if (isHorizontal() && m_layer->renderer()->childrenInline()) {
             s->setWhiteSpace(NOWRAP);
-            s->setTextAlign(TAAUTO);
+            s->setTextAlign(TASTART);
         }
     }
     

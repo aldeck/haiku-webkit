@@ -39,7 +39,6 @@
 #include "InspectorBackendDispatcher.h"
 #include "InspectorController.h"
 #include "InspectorFrontend.h"
-#include "InspectorInstrumentation.h"
 #include "InspectorProtocolVersion.h"
 #include "MemoryCache.h"
 #include "Page.h"
@@ -47,6 +46,7 @@
 #include "PageScriptDebugServer.h"
 #include "painting/GraphicsContextBuilder.h"
 #include "PlatformString.h"
+#include "RenderView.h"
 #include "ResourceError.h"
 #include "ResourceRequest.h"
 #include "ResourceResponse.h"
@@ -231,10 +231,8 @@ public:
             return;
 
         frame->setTextZoomFactor(m_webView->emulatedTextZoomFactor());
-        WebSize scaledFrameSize = scaledEmulatedFrameSize(frame->view());
         ensureOriginalZoomFactor(frame->view());
-        double sizeRatio = static_cast<double>(scaledFrameSize.width) / m_emulatedFrameSize.width;
-        frame->setPageAndTextZoomFactors(sizeRatio * m_originalZoomFactor, m_webView->emulatedTextZoomFactor());
+        frame->setPageAndTextZoomFactors(m_originalZoomFactor, m_webView->emulatedTextZoomFactor());
         Document* doc = frame->document();
         doc->styleResolverChanged(RecalcStyleImmediately);
         doc->updateLayout();
@@ -269,7 +267,10 @@ private:
         m_webView->setPageScaleFactor(1, WebPoint());
         m_webView->setZoomLevel(false, 0);
         WebSize scaledEmulatedSize = scaledEmulatedFrameSize(frameView);
-        m_originalZoomFactor = static_cast<double>(scaledEmulatedSize.width) / frameView->contentsWidth();
+        double denominator = frameView->contentsWidth();
+        if (!denominator)
+            denominator = 1;
+        m_originalZoomFactor = static_cast<double>(scaledEmulatedSize.width) / denominator;
     }
 
     void restore()
@@ -298,8 +299,8 @@ private:
         int overrideHeight = m_emulatedFrameSize.height;
 
         WebSize webViewSize = m_webView->size();
-        int availableViewWidth = webViewSize.width - scrollbarDimensions.width;
-        int availableViewHeight = webViewSize.height - scrollbarDimensions.height;
+        int availableViewWidth = max(webViewSize.width - scrollbarDimensions.width, 1);
+        int availableViewHeight = max(webViewSize.height - scrollbarDimensions.height, 1);
 
         double widthRatio = static_cast<double>(overrideWidth) / availableViewWidth;
         double heightRatio = static_cast<double>(overrideHeight) / availableViewHeight;
@@ -553,15 +554,6 @@ void WebDevToolsAgentImpl::evaluateInWebInspector(long callId, const WebString& 
 {
     InspectorController* ic = inspectorController();
     ic->evaluateForTestInFrontend(callId, script);
-}
-
-void WebDevToolsAgentImpl::setJavaScriptProfilingEnabled(bool enabled)
-{
-    InspectorController* ic = inspectorController();
-    if (enabled)
-        ic->enableProfiler();
-    else
-        ic->disableProfiler();
 }
 
 WebString WebDevToolsAgent::inspectorProtocolVersion()

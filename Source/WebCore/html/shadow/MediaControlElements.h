@@ -161,6 +161,7 @@ public:
 
 private:
     MediaControlVolumeSliderContainerElement(Document*);
+    virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
     virtual void defaultEventHandler(Event*);
     virtual MediaControlElementType displayType() const;
     virtual const AtomicString& shadowPseudoId() const;
@@ -388,12 +389,14 @@ public:
 
     virtual void defaultEventHandler(Event*);
     void setVolume(float);
+    void setClearMutedOnUserInteraction(bool);
 
 protected:
     MediaControlVolumeSliderElement(Document*);
 
 private:
     virtual const AtomicString& shadowPseudoId() const;
+    bool m_clearMutedOnUserInteraction;
 };
 
 // ----------------------------
@@ -409,8 +412,6 @@ private:
     MediaControlFullscreenButtonElement(Document*, MediaControls*);
 
     virtual const AtomicString& shadowPseudoId() const;
-
-    MediaControls* m_controls;
 };
 
 // ----------------------------

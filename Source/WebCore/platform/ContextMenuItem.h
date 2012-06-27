@@ -136,6 +136,7 @@ namespace WebCore {
         ContextMenuItemTagRightToLeft,
         ContextMenuItemTagPDFSinglePageScrolling,
         ContextMenuItemTagPDFFacingPagesScrolling,
+        ContextMenuItemTagDictationAlternative,
 #if ENABLE(INSPECTOR)
         ContextMenuItemTagInspectElement,
 #endif
@@ -227,6 +228,7 @@ namespace WebCore {
         ContextMenuItemType type;
         ContextMenuAction action;
         String title;
+        Vector<ContextMenuItem> subMenuItems;
         bool checked;
         bool enabled;
     };

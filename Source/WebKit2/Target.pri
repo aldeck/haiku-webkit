@@ -12,7 +12,7 @@ load(features)
 include(WebKit2.pri)
 
 WEBKIT += wtf javascriptcore webcore
-QT += declarative quick quick-private
+QT += qml quick quick-private
 
 CONFIG += staticlib
 
@@ -76,6 +76,8 @@ HEADERS += \
     Shared/ImageOptions.h \
     Shared/ImmutableArray.h \
     Shared/ImmutableDictionary.h \
+    Shared/IntentData.h \
+    Shared/IntentServiceInfo.h \
     Shared/LayerTreeContext.h \
     Shared/MutableArray.h \
     Shared/MutableDictionary.h \
@@ -137,6 +139,7 @@ HEADERS += \
     Shared/qt/ArgumentCodersQt.h \
     Shared/qt/PlatformCertificateInfo.h \
     Shared/qt/WebEventFactoryQt.h \
+    Shared/qt/QtDefaultDataLocation.h \
     Shared/qt/QtNetworkReplyData.h \
     Shared/qt/QtNetworkRequestData.h \
     UIProcess/API/C/WKAPICast.h \
@@ -158,6 +161,7 @@ HEADERS += \
     UIProcess/API/C/WKHitTestResult.h \
     UIProcess/API/C/WKIconDatabase.h \
     UIProcess/API/C/WKInspector.h \
+    UIProcess/API/C/WKIntentData.h \
     UIProcess/API/C/WKOpenPanelParameters.h \
     UIProcess/API/C/WKOpenPanelResultListener.h \
     UIProcess/API/C/WKNavigationData.h \
@@ -195,7 +199,7 @@ HEADERS += \
     UIProcess/API/qt/qquicknetworkreply_p.h \
     UIProcess/API/qt/qquicknetworkrequest_p.h \
     UIProcess/API/qt/qquickurlschemedelegate_p.h \
-    UIProcess/API/qt/qwebviewportinfo_p.h \
+    UIProcess/API/qt/qwebkittest_p.h \
     UIProcess/Authentication/AuthenticationChallengeProxy.h \
     UIProcess/Authentication/AuthenticationDecisionListener.h \
     UIProcess/Authentication/WebCredential.h \
@@ -208,11 +212,6 @@ HEADERS += \
     UIProcess/GenericCallback.h \
     UIProcess/GeolocationPermissionRequestManagerProxy.h \
     UIProcess/GeolocationPermissionRequestProxy.h \
-    UIProcess/InspectorServer/WebInspectorServer.h \
-    UIProcess/InspectorServer/WebSocketServer.h \
-    UIProcess/InspectorServer/WebSocketServerClient.h \
-    UIProcess/InspectorServer/WebSocketServerConnection.h \
-    UIProcess/InspectorServer/qt/WebSocketServerQt.h \
     UIProcess/Launcher/ProcessLauncher.h \
     UIProcess/Launcher/ThreadLauncher.h \
     UIProcess/LayerTreeHostProxy.h \
@@ -231,6 +230,7 @@ HEADERS += \
     UIProcess/VisitedLinkProvider.h \
     UIProcess/WebApplicationCacheManagerProxy.h \
     UIProcess/WebBackForwardList.h \
+    UIProcess/WebColorChooserProxy.h \
     UIProcess/WebConnectionToWebProcess.h \
     UIProcess/WebContext.h \
     UIProcess/WebContextConnectionClient.h \
@@ -256,6 +256,8 @@ HEADERS += \
     UIProcess/WebIconDatabase.h \
     UIProcess/WebIconDatabaseClient.h \
     UIProcess/WebInspectorProxy.h \
+    UIProcess/WebIntentData.h \
+    UIProcess/WebIntentServiceInfo.h \
     UIProcess/WebKeyValueStorageManagerProxy.h \
     UIProcess/WebLayerTreeRenderer.h \
     UIProcess/WebLoaderClient.h \
@@ -286,7 +288,7 @@ HEADERS += \
     UIProcess/qt/QtWebPagePolicyClient.h \
     UIProcess/qt/QtWebPageSGNode.h \
     UIProcess/qt/QtWebPageUIClient.h \
-    UIProcess/qt/QtViewportInteractionEngine.h \
+    UIProcess/qt/QtViewportHandler.h \
     UIProcess/qt/QtWebUndoController.h \
     UIProcess/qt/QtWebIconDatabaseClient.h \
     UIProcess/qt/WebContextMenuProxyQt.h \
@@ -345,6 +347,7 @@ HEADERS += \
     WebProcess/Plugins/PluginProcessConnection.h \
     WebProcess/Plugins/PluginProcessConnectionManager.h \
     WebProcess/WebCoreSupport/WebChromeClient.h \
+    WebProcess/WebCoreSupport/WebColorChooser.h \
     WebProcess/WebCoreSupport/WebContextMenuClient.h \
     WebProcess/WebCoreSupport/WebDatabaseManager.h \
     WebProcess/WebCoreSupport/WebDragClient.h \
@@ -393,6 +396,7 @@ SOURCES += \
     Platform/Logging.cpp \
     Platform/Module.cpp \
     Platform/WorkQueue.cpp \
+    Platform/qt/LoggingQt.cpp \
     Platform/qt/ModuleQt.cpp \
     PluginProcess/PluginControllerProxy.cpp \
     PluginProcess/PluginCreationParameters.cpp \
@@ -443,6 +447,8 @@ SOURCES += \
     Shared/FontInfo.cpp \
     Shared/ImmutableArray.cpp \
     Shared/ImmutableDictionary.cpp \
+    Shared/IntentData.cpp \
+    Shared/IntentServiceInfo.cpp \
     Shared/MutableArray.cpp \
     Shared/MutableDictionary.cpp \
     Shared/OriginAndDatabases.cpp \
@@ -493,6 +499,7 @@ SOURCES += \
     Shared/qt/ProcessExecutablePathQt.cpp \
     Shared/qt/WebCoreArgumentCodersQt.cpp \
     Shared/qt/WebEventFactoryQt.cpp \
+    Shared/qt/QtDefaultDataLocation.cpp \
     Shared/qt/QtNetworkReplyData.cpp \
     Shared/qt/QtNetworkRequestData.cpp \
     Shared/qt/WebURLRequestQt.cpp \
@@ -513,6 +520,7 @@ SOURCES += \
     UIProcess/API/C/WKHitTestResult.cpp \
     UIProcess/API/C/WKIconDatabase.cpp \
     UIProcess/API/C/WKInspector.cpp \
+    UIProcess/API/C/WKIntentData.cpp \
     UIProcess/API/C/WKNotification.cpp \
     UIProcess/API/C/WKNotificationManager.cpp \
     UIProcess/API/C/WKNotificationPermissionRequest.cpp \
@@ -540,7 +548,7 @@ SOURCES += \
     UIProcess/API/qt/qquicknetworkrequest.cpp \
     UIProcess/API/qt/qquickurlschemedelegate.cpp \
     UIProcess/API/qt/qwebpreferences.cpp \
-    UIProcess/API/qt/qwebviewportinfo.cpp \
+    UIProcess/API/qt/qwebkittest.cpp \
     UIProcess/Authentication/AuthenticationChallengeProxy.cpp \
     UIProcess/Authentication/AuthenticationDecisionListener.cpp \
     UIProcess/Authentication/WebCredential.cpp \
@@ -554,11 +562,6 @@ SOURCES += \
     UIProcess/FindIndicator.cpp \
     UIProcess/GeolocationPermissionRequestManagerProxy.cpp \
     UIProcess/GeolocationPermissionRequestProxy.cpp \
-    UIProcess/InspectorServer/WebInspectorServer.cpp \
-    UIProcess/InspectorServer/WebSocketServer.cpp \
-    UIProcess/InspectorServer/WebSocketServerConnection.cpp \
-    UIProcess/InspectorServer/qt/WebInspectorServerQt.cpp \
-    UIProcess/InspectorServer/qt/WebSocketServerQt.cpp \
     UIProcess/Launcher/ProcessLauncher.cpp \
     UIProcess/Launcher/ThreadLauncher.cpp \
     UIProcess/Launcher/qt/ProcessLauncherQt.cpp \
@@ -603,6 +606,8 @@ SOURCES += \
     UIProcess/WebIconDatabase.cpp \
     UIProcess/WebIconDatabaseClient.cpp \
     UIProcess/WebInspectorProxy.cpp \
+    UIProcess/WebIntentData.cpp \
+    UIProcess/WebIntentServiceInfo.cpp \
     UIProcess/WebKeyValueStorageManagerProxy.cpp \
     UIProcess/WebLayerTreeRenderer.cpp \
     UIProcess/WebLoaderClient.cpp \
@@ -634,7 +639,7 @@ SOURCES += \
     UIProcess/qt/QtWebPageSGNode.cpp \
     UIProcess/qt/QtWebPageUIClient.cpp \
     UIProcess/qt/TextCheckerQt.cpp \
-    UIProcess/qt/QtViewportInteractionEngine.cpp \
+    UIProcess/qt/QtViewportHandler.cpp \
     UIProcess/qt/WebContextMenuProxyQt.cpp \
     UIProcess/qt/WebContextQt.cpp \
     UIProcess/qt/WebGeolocationProviderQt.cpp \
@@ -710,6 +715,7 @@ SOURCES += \
     WebProcess/Plugins/PluginProcessConnection.cpp \
     WebProcess/Plugins/PluginProcessConnectionManager.cpp \
     WebProcess/WebCoreSupport/WebChromeClient.cpp \
+    WebProcess/WebCoreSupport/WebColorChooser.cpp \
     WebProcess/WebCoreSupport/WebContextMenuClient.cpp \
     WebProcess/WebCoreSupport/WebDatabaseManager.cpp \
     WebProcess/WebCoreSupport/WebDragClient.cpp \
@@ -782,11 +788,34 @@ mac: {
         Platform/unix/SharedMemoryUnix.cpp
 }
 
+contains(DEFINES, ENABLE_INSPECTOR_SERVER=1) {
+    HEADERS += \
+        UIProcess/InspectorServer/WebInspectorServer.h \
+        UIProcess/InspectorServer/WebSocketServer.h \
+        UIProcess/InspectorServer/WebSocketServerClient.h \
+        UIProcess/InspectorServer/WebSocketServerConnection.h \
+        UIProcess/InspectorServer/qt/WebSocketServerQt.h
+
+    SOURCES += \
+        UIProcess/InspectorServer/WebInspectorServer.cpp \
+        UIProcess/InspectorServer/WebSocketServer.cpp \
+        UIProcess/InspectorServer/WebSocketServerConnection.cpp \
+        UIProcess/InspectorServer/qt/WebInspectorServerQt.cpp \
+        UIProcess/InspectorServer/qt/WebSocketServerQt.cpp
+}
+
 contains(DEFINES, ENABLE_TOUCH_EVENTS=1) {
     HEADERS += \
         Shared/NativeWebTouchEvent.h
     SOURCES += \
         Shared/qt/NativeWebTouchEventQt.cpp
+}
+
+contains(DEFINES, ENABLE_INPUT_TYPE_COLOR=1) {
+    HEADERS += \
+        UIProcess/qt/WebColorChooserProxyQt.h
+    SOURCES += \
+        UIProcess/qt/WebColorChooserProxyQt.cpp
 }
 
 contains(DEFINES, ENABLE_GEOLOCATION=1): QT += location

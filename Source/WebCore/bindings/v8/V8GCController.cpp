@@ -59,6 +59,10 @@
 #include <wtf/StdLibExtras.h>
 #include <wtf/UnusedParam.h>
 
+#if PLATFORM(CHROMIUM)
+#include "TraceEvent.h"
+#endif
+
 namespace WebCore {
 
 #ifndef NDEBUG
@@ -302,10 +306,9 @@ static GroupId calculateGroupId(Node* node)
         // because it'll always be a group of 1.
         if (!root)
             return GroupId();
-    } else {
-        while (Node* parent = root->parentOrHostNode())
-            root = parent;
     }
+    while (Node* parent = root->parentOrHostNode())
+        root = parent;
 
     return GroupId(root);
 }
@@ -337,6 +340,9 @@ public:
 
     void visitDOMWrapper(DOMDataStore* store, void* object, v8::Persistent<v8::Object> wrapper)
     {
+        WrapperTypeInfo* info = V8DOMWrapper::domWrapperType(wrapper);
+        if (info->domWrapperVisitorFunction)
+            info->domWrapperVisitorFunction(store, object, wrapper);
     }
 
     void applyGrouping()
@@ -388,6 +394,10 @@ private:
 void V8GCController::gcPrologue()
 {
     v8::HandleScope scope;
+
+#if PLATFORM(CHROMIUM)
+    TRACE_EVENT_BEGIN0("v8", "GC");
+#endif
 
 #ifndef NDEBUG
     DOMObjectVisitor domObjectVisitor;
@@ -508,6 +518,10 @@ void V8GCController::gcEpilogue()
     visitDOMNodes(&weakDOMNodeVisitor);
 
     enumerateGlobalHandles();
+#endif
+
+#if PLATFORM(CHROMIUM)
+    TRACE_EVENT_END0("v8", "GC");
 #endif
 }
 

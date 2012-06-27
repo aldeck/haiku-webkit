@@ -290,6 +290,21 @@ void WebPage::insertText(const String& text, uint64_t replacementRangeStart, uin
     newState = editorState();
 }
 
+void WebPage::insertDictatedText(const String& text, uint64_t replacementRangeStart, uint64_t replacementRangeEnd, const Vector<WebCore::DictationAlternative>& dictationAlternativeLocations, bool& handled, EditorState& newState)
+{
+    Frame* frame = m_page->focusController()->focusedOrMainFrame();
+
+    if (replacementRangeStart != NSNotFound) {
+        RefPtr<Range> replacementRange = convertToRange(frame, NSMakeRange(replacementRangeStart, replacementRangeEnd - replacementRangeStart));
+        if (replacementRange)
+            frame->selection()->setSelection(VisibleSelection(replacementRange.get(), SEL_DEFAULT_AFFINITY));
+    }
+
+    ASSERT(!frame->editor()->hasComposition());
+    handled = frame->editor()->insertDictatedText(text, dictationAlternativeLocations, m_keyboardEventBeingInterpreted);
+    newState = editorState();
+}
+
 void WebPage::getMarkedRange(uint64_t& location, uint64_t& length)
 {
     location = NSNotFound;
@@ -710,9 +725,11 @@ void WebPage::shouldDelayWindowOrderingEvent(const WebKit::WebMouseEvent& event,
     if (!frame)
         return;
 
+#if ENABLE(DRAG_SUPPORT)
     HitTestResult hitResult = frame->eventHandler()->hitTestResultAtPoint(frame->view()->windowToContents(event.position()), true);
     if (hitResult.isSelected())
         result = frame->eventHandler()->eventMayStartDrag(platform(event));
+#endif
 }
 
 void WebPage::acceptsFirstMouse(int eventNumber, const WebKit::WebMouseEvent& event, bool& result)
@@ -724,9 +741,11 @@ void WebPage::acceptsFirstMouse(int eventNumber, const WebKit::WebMouseEvent& ev
     
     HitTestResult hitResult = frame->eventHandler()->hitTestResultAtPoint(frame->view()->windowToContents(event.position()), true);
     frame->eventHandler()->setActivationEventNumber(eventNumber);
+#if ENABLE(DRAG_SUPPORT)
     if (hitResult.isSelected())
         result = frame->eventHandler()->eventMayStartDrag(platform(event));
-    else 
+    else
+#endif
         result = !!hitResult.scrollbar();
 }
 

@@ -96,8 +96,6 @@ interface IWebFramePrivate : IUnknown
 
     [local] JSGlobalContextRef globalContextForScriptWorld([in] IWebScriptWorld*);
 
-    HRESULT counterValueForElementById([in] BSTR id, [out, retval] BSTR* result);
-
     HRESULT visibleContentRect([out, retval] RECT*);
 
     HRESULT pageNumberForElementById([in] BSTR id, [in] float pageWidthInPixels, [in] float pageHeightInPixels, [out, retval] int* pageNumber);
@@ -109,9 +107,6 @@ interface IWebFramePrivate : IUnknown
     HRESULT paintScrollViewRectToContextAtPoint([in] RECT rect, [in] POINT pt, [in] OLE_HANDLE deviceContext);
 
     HRESULT renderTreeAsExternalRepresentation([in] BOOL forPrinting, [out, retval] BSTR* result);
-
-    HRESULT suspendAnimations();
-    HRESULT resumeAnimations();
 
     HRESULT loadPlainTextString([in] BSTR string, [in] BSTR url);
 

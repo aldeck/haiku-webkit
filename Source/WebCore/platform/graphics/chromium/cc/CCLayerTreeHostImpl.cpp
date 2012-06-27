@@ -26,9 +26,8 @@
 
 #include "cc/CCLayerTreeHostImpl.h"
 
-#include "Extensions3D.h"
-#include "GraphicsContext3D.h"
 #include "LayerRendererChromium.h"
+#include "TextStream.h"
 #include "TraceEvent.h"
 #include "cc/CCActiveGestureAnimation.h"
 #include "cc/CCDamageTracker.h"
@@ -36,18 +35,20 @@
 #include "cc/CCDelayBasedTimeSource.h"
 #include "cc/CCFontAtlas.h"
 #include "cc/CCFrameRateCounter.h"
-#include "cc/CCGestureCurve.h"
 #include "cc/CCHeadsUpDisplay.h"
 #include "cc/CCLayerIterator.h"
 #include "cc/CCLayerTreeHost.h"
 #include "cc/CCLayerTreeHostCommon.h"
+#include "cc/CCOverdrawMetrics.h"
 #include "cc/CCPageScaleAnimation.h"
-#include "cc/CCRenderSurfaceDrawQuad.h"
-#include "cc/CCThreadTask.h"
+#include "cc/CCRenderPassDrawQuad.h"
+#include "cc/CCSettings.h"
+#include "cc/CCSingleThreadProxy.h"
 #include <wtf/CurrentTime.h>
 
+using WebKit::WebTransformationMatrix;
+
 namespace {
-const double lowFrequencyAnimationInterval = 1;
 
 void didVisibilityChange(WebCore::CCLayerTreeHostImpl* id, bool visible)
 {
@@ -78,6 +79,11 @@ public:
 
     virtual void onTimerTick() OVERRIDE
     {
+        // FIXME: We require that animate be called on the impl thread. This
+        // avoids asserts in single threaded mode. Ideally background ticking
+        // would be handled by the proxy/scheduler and this could be removed.
+        DebugScopedSetImplThread impl;
+
         m_layerTreeHostImpl->animate(monotonicallyIncreasingTime(), currentTime());
     }
 
@@ -99,12 +105,12 @@ private:
     RefPtr<CCDelayBasedTimeSource> m_timeSource;
 };
 
-PassOwnPtr<CCLayerTreeHostImpl> CCLayerTreeHostImpl::create(const CCSettings& settings, CCLayerTreeHostImplClient* client)
+PassOwnPtr<CCLayerTreeHostImpl> CCLayerTreeHostImpl::create(const CCLayerTreeSettings& settings, CCLayerTreeHostImplClient* client)
 {
     return adoptPtr(new CCLayerTreeHostImpl(settings, client));
 }
 
-CCLayerTreeHostImpl::CCLayerTreeHostImpl(const CCSettings& settings, CCLayerTreeHostImplClient* client)
+CCLayerTreeHostImpl::CCLayerTreeHostImpl(const CCLayerTreeSettings& settings, CCLayerTreeHostImplClient* client)
     : m_client(client)
     , m_sourceFrameNumber(-1)
     , m_frameNumber(0)
@@ -112,16 +118,18 @@ CCLayerTreeHostImpl::CCLayerTreeHostImpl(const CCSettings& settings, CCLayerTree
     , m_currentlyScrollingLayerImpl(0)
     , m_scrollingLayerIdFromPreviousTree(-1)
     , m_settings(settings)
+    , m_deviceScaleFactor(1)
     , m_visible(true)
+    , m_sourceFrameCanBeDrawn(true)
     , m_headsUpDisplay(CCHeadsUpDisplay::create())
     , m_pageScale(1)
     , m_pageScaleDelta(1)
     , m_sentPageScaleDelta(1)
     , m_minPageScale(0)
     , m_maxPageScale(0)
+    , m_hasTransparentBackground(false)
     , m_needsAnimateLayers(false)
     , m_pinchGestureActive(false)
-    , m_timeSourceClientAdapter(CCLayerTreeHostImplTimeSourceAdapter::create(this, CCDelayBasedTimeSource::create(lowFrequencyAnimationInterval * 1000.0, CCProxy::currentThread())))
     , m_fpsCounter(CCFrameRateCounter::create())
     , m_debugRectHistory(CCDebugRectHistory::create())
 {
@@ -132,10 +140,10 @@ CCLayerTreeHostImpl::CCLayerTreeHostImpl(const CCSettings& settings, CCLayerTree
 CCLayerTreeHostImpl::~CCLayerTreeHostImpl()
 {
     ASSERT(CCProxy::isImplThread());
-    TRACE_EVENT("CCLayerTreeHostImpl::~CCLayerTreeHostImpl()", this, 0);
+    TRACE_EVENT0("cc", "CCLayerTreeHostImpl::~CCLayerTreeHostImpl()");
 
     if (m_rootLayerImpl)
-        clearRenderSurfacesOnCCLayerImplRecursive(m_rootLayerImpl.get());
+        clearRenderSurfaces();
 }
 
 void CCLayerTreeHostImpl::beginCommit()
@@ -155,12 +163,16 @@ bool CCLayerTreeHostImpl::canDraw()
         return false;
     if (viewportSize().isEmpty())
         return false;
+    if (!m_layerRenderer)
+        return false;
+    if (!m_sourceFrameCanBeDrawn)
+        return false;
     return true;
 }
 
-GraphicsContext3D* CCLayerTreeHostImpl::context()
+CCGraphicsContext* CCLayerTreeHostImpl::context()
 {
-    return m_layerRenderer ? m_layerRenderer->context() : 0;
+    return m_context.get();
 }
 
 void CCLayerTreeHostImpl::animate(double monotonicTime, double wallClockTime)
@@ -222,26 +234,6 @@ void CCLayerTreeHostImpl::trackDamageForAllSurfaces(CCLayerImpl* rootDrawLayer, 
     }
 }
 
-static FloatRect damageInSurfaceSpace(CCLayerImpl* renderSurfaceLayer, const FloatRect& rootDamageRect)
-{
-    FloatRect surfaceDamageRect;
-    // For now, we conservatively use the root damage as the damage for
-    // all surfaces, except perspective transforms.
-    const TransformationMatrix& screenSpaceTransform = renderSurfaceLayer->renderSurface()->screenSpaceTransform();
-    if (screenSpaceTransform.hasPerspective()) {
-        // Perspective projections do not play nice with mapRect of
-        // inverse transforms. In this uncommon case, its simpler to
-        // just redraw the entire surface.
-        // FIXME: use calculateVisibleRect to handle projections.
-        CCRenderSurface* renderSurface = renderSurfaceLayer->renderSurface();
-        surfaceDamageRect = renderSurface->contentRect();
-    } else {
-        TransformationMatrix inverseScreenSpaceTransform = screenSpaceTransform.inverse();
-        surfaceDamageRect = inverseScreenSpaceTransform.mapRect(rootDamageRect);
-    }
-    return surfaceDamageRect;
-}
-
 void CCLayerTreeHostImpl::calculateRenderSurfaceLayerList(CCLayerList& renderSurfaceLayerList)
 {
     ASSERT(renderSurfaceLayerList.isEmpty());
@@ -252,54 +244,51 @@ void CCLayerTreeHostImpl::calculateRenderSurfaceLayerList(CCLayerList& renderSur
     if (!m_rootLayerImpl->renderSurface())
         m_rootLayerImpl->createRenderSurface();
     m_rootLayerImpl->renderSurface()->clearLayerList();
-    m_rootLayerImpl->renderSurface()->setContentRect(IntRect(IntPoint(), viewportSize()));
+    m_rootLayerImpl->renderSurface()->setContentRect(IntRect(IntPoint(), deviceViewportSize()));
 
-    m_rootLayerImpl->setClipRect(IntRect(IntPoint(), viewportSize()));
+    m_rootLayerImpl->setClipRect(IntRect(IntPoint(), deviceViewportSize()));
 
     {
-        TransformationMatrix identityMatrix;
-        TRACE_EVENT("CCLayerTreeHostImpl::calcDrawEtc", this, 0);
-        CCLayerTreeHostCommon::calculateDrawTransformsAndVisibility(m_rootLayerImpl.get(), m_rootLayerImpl.get(), identityMatrix, identityMatrix, renderSurfaceLayerList, m_rootLayerImpl->renderSurface()->layerList(), &m_layerSorter, layerRendererCapabilities().maxTextureSize);
+        TRACE_EVENT0("cc", "CCLayerTreeHostImpl::calcDrawEtc");
+        WebTransformationMatrix identityMatrix;
+        WebTransformationMatrix deviceScaleTransform;
+        deviceScaleTransform.scale(m_deviceScaleFactor);
+        CCLayerTreeHostCommon::calculateDrawTransforms(m_rootLayerImpl.get(), m_rootLayerImpl.get(), deviceScaleTransform, identityMatrix, renderSurfaceLayerList, m_rootLayerImpl->renderSurface()->layerList(), &m_layerSorter, layerRendererCapabilities().maxTextureSize);
+
+        trackDamageForAllSurfaces(m_rootLayerImpl.get(), renderSurfaceLayerList);
+
+        if (layerRendererCapabilities().usingPartialSwap)
+            m_rootScissorRect = m_rootLayerImpl->renderSurface()->damageTracker()->currentDamageRect();
+        else
+            m_rootScissorRect = FloatRect(FloatPoint(0, 0), deviceViewportSize());
+
+        CCLayerTreeHostCommon::calculateVisibleAndScissorRects(renderSurfaceLayerList, m_rootScissorRect);
     }
 }
 
-bool CCLayerTreeHostImpl::calculateRenderPasses(CCRenderPassList& passes, CCLayerList& renderSurfaceLayerList)
+bool CCLayerTreeHostImpl::calculateRenderPasses(FrameData& frame)
 {
-    ASSERT(passes.isEmpty());
+    ASSERT(frame.renderPasses.isEmpty());
 
-    calculateRenderSurfaceLayerList(renderSurfaceLayerList);
+    calculateRenderSurfaceLayerList(*frame.renderSurfaceLayerList);
 
-    TRACE_EVENT1("webkit", "CCLayerTreeHostImpl::calculateRenderPasses", "renderSurfaceLayerList.size()", static_cast<long long unsigned>(renderSurfaceLayerList.size()));
+    TRACE_EVENT1("cc", "CCLayerTreeHostImpl::calculateRenderPasses", "renderSurfaceLayerList.size()", static_cast<long long unsigned>(frame.renderSurfaceLayerList->size()));
 
-    if (layerRendererCapabilities().usingPartialSwap || settings().showSurfaceDamageRects)
-        trackDamageForAllSurfaces(m_rootLayerImpl.get(), renderSurfaceLayerList);
-    m_rootDamageRect = m_rootLayerImpl->renderSurface()->damageTracker()->currentDamageRect();
+    m_rootLayerImpl->setScissorRect(enclosingIntRect(m_rootScissorRect));
 
     // Create the render passes in dependency order.
     HashMap<CCRenderSurface*, CCRenderPass*> surfacePassMap;
-    for (int surfaceIndex = renderSurfaceLayerList.size() - 1; surfaceIndex >= 0 ; --surfaceIndex) {
-        CCLayerImpl* renderSurfaceLayer = renderSurfaceLayerList[surfaceIndex];
+    for (int surfaceIndex = frame.renderSurfaceLayerList->size() - 1; surfaceIndex >= 0 ; --surfaceIndex) {
+        CCLayerImpl* renderSurfaceLayer = (*frame.renderSurfaceLayerList)[surfaceIndex];
         CCRenderSurface* renderSurface = renderSurfaceLayer->renderSurface();
 
         OwnPtr<CCRenderPass> pass = CCRenderPass::create(renderSurface);
-
-        FloatRect surfaceDamageRect;
-        if (layerRendererCapabilities().usingPartialSwap)
-            surfaceDamageRect = damageInSurfaceSpace(renderSurfaceLayer, m_rootDamageRect);
-        pass->setSurfaceDamageRect(surfaceDamageRect);
-
         surfacePassMap.add(renderSurface, pass.get());
-        passes.append(pass.release());
+        frame.renderPasses.append(pass.release());
     }
 
-    IntRect scissorRect;
-    if (layerRendererCapabilities().usingPartialSwap)
-        scissorRect = enclosingIntRect(m_rootDamageRect);
-    else
-        scissorRect = IntRect(IntPoint(), viewportSize());
-
     bool recordMetricsForFrame = true; // FIXME: In the future, disable this when about:tracing is off.
-    CCOcclusionTrackerImpl occlusionTracker(scissorRect, recordMetricsForFrame);
+    CCOcclusionTrackerImpl occlusionTracker(enclosingIntRect(m_rootScissorRect), recordMetricsForFrame);
     occlusionTracker.setMinimumTrackingSize(CCOcclusionTrackerImpl::preferredMinimumTrackingSize());
 
     // Add quads to the Render passes in FrontToBack order to allow for testing occlusion and performing culling during the tree walk.
@@ -310,18 +299,21 @@ bool CCLayerTreeHostImpl::calculateRenderPasses(CCRenderPassList& passes, CCLaye
     // in the future.
     bool drawFrame = true;
 
-    CCLayerIteratorType end = CCLayerIteratorType::end(&renderSurfaceLayerList);
-    for (CCLayerIteratorType it = CCLayerIteratorType::begin(&renderSurfaceLayerList); it != end; ++it) {
+    CCLayerIteratorType end = CCLayerIteratorType::end(frame.renderSurfaceLayerList);
+    for (CCLayerIteratorType it = CCLayerIteratorType::begin(frame.renderSurfaceLayerList); it != end; ++it) {
         CCRenderSurface* renderSurface = it.targetRenderSurfaceLayer()->renderSurface();
         CCRenderPass* pass = surfacePassMap.get(renderSurface);
         bool hadMissingTiles = false;
 
         occlusionTracker.enterLayer(it);
 
-        if (it.representsContributingRenderSurface())
-            pass->appendQuadsForRenderSurfaceLayer(*it, &occlusionTracker);
-        else if (it.representsItself() && !it->visibleLayerRect().isEmpty()) {
-            it->willDraw(m_layerRenderer.get());
+        if (it.representsContributingRenderSurface() && !it->renderSurface()->scissorRect().isEmpty()) {
+            CCRenderPass* contributingRenderPass = surfacePassMap.get(it->renderSurface());
+            pass->appendQuadsForRenderSurfaceLayer(*it, contributingRenderPass, &occlusionTracker);
+        } else if (it.representsItself() && !occlusionTracker.occluded(*it, it->visibleLayerRect()) && !it->visibleLayerRect().isEmpty() && !it->scissorRect().isEmpty()) {
+            it->willDraw(m_layerRenderer.get(), context());
+            frame.willDrawLayers.append(*it);
+
             pass->appendQuadsForLayer(*it, &occlusionTracker, hadMissingTiles);
         }
 
@@ -334,10 +326,17 @@ bool CCLayerTreeHostImpl::calculateRenderPasses(CCRenderPassList& passes, CCLaye
         occlusionTracker.leaveLayer(it);
     }
 
-    passes.last()->appendQuadsToFillScreen(m_rootLayerImpl.get(), m_backgroundColor, occlusionTracker);
+    if (!m_hasTransparentBackground) {
+        frame.renderPasses.last()->setHasTransparentBackground(false);
+        frame.renderPasses.last()->appendQuadsToFillScreen(m_rootLayerImpl.get(), m_backgroundColor, occlusionTracker);
+    }
 
     if (drawFrame)
         occlusionTracker.overdrawMetrics().recordMetrics(this);
+
+    m_layerRenderer->decideRenderPassAllocationsForFrame(frame.renderPasses);
+    removePassesWithCachedTextures(frame.renderPasses, frame.skippedPasses);
+
     return drawFrame;
 }
 
@@ -369,6 +368,15 @@ void CCLayerTreeHostImpl::animateLayersRecursive(CCLayerImpl* current, double mo
     needsAnimateLayers = subtreeNeedsAnimateLayers;
 }
 
+void CCLayerTreeHostImpl::setBackgroundTickingEnabled(bool enabled)
+{
+    // Lazily create the timeSource adapter so that we can vary the interval for testing.
+    if (!m_timeSourceClientAdapter)
+        m_timeSourceClientAdapter = CCLayerTreeHostImplTimeSourceAdapter::create(this, CCDelayBasedTimeSource::create(lowFrequencyAnimationInterval(), CCProxy::currentThread()));
+
+    m_timeSourceClientAdapter->setActive(enabled);
+}
+
 IntSize CCLayerTreeHostImpl::contentSize() const
 {
     // TODO(aelias): Hardcoding the first child here is weird. Think of
@@ -378,24 +386,82 @@ IntSize CCLayerTreeHostImpl::contentSize() const
     return m_rootScrollLayerImpl->children()[0]->contentBounds();
 }
 
+void CCLayerTreeHostImpl::removeRenderPassesRecursive(CCRenderPassList& passes, size_t bottomPass, const CCRenderPass* firstToRemove, CCRenderPassList& skippedPasses)
+{
+    size_t removeIndex = passes.find(firstToRemove);
+
+    // The pass was already removed by another quad - probably the original, and we are the replica.
+    if (removeIndex == notFound)
+        return;
+
+    OwnPtr<CCRenderPass> removedPass = passes[removeIndex].release();
+    passes.remove(removeIndex);
+
+    // Now follow up for all RenderPass quads and remove their render passes recursively.
+    const CCQuadList& quadList = removedPass->quadList();
+    CCQuadList::constBackToFrontIterator quadListIterator = quadList.backToFrontBegin();
+    for (; quadListIterator != quadList.backToFrontEnd(); ++quadListIterator) {
+        CCDrawQuad* currentQuad = (*quadListIterator).get();
+        if (currentQuad->material() != CCDrawQuad::RenderPass)
+            continue;
+
+        CCRenderPassDrawQuad* renderPassQuad = static_cast<CCRenderPassDrawQuad*>(currentQuad);
+        const CCRenderPass* nextRenderPass = renderPassQuad->renderPass();
+
+        // Our search is now limited up to the pass that we just removed.
+        // Substitute removeIndex for bottomPass now.
+        removeRenderPassesRecursive(passes, removeIndex, nextRenderPass, skippedPasses);
+    }
+    skippedPasses.append(removedPass.release());
+}
+
+void CCLayerTreeHostImpl::removePassesWithCachedTextures(CCRenderPassList& passes, CCRenderPassList& skippedPasses)
+{
+    for (int passIndex = passes.size() - 1; passIndex >= 0; --passIndex) {
+        CCRenderPass* currentPass = passes[passIndex].get();
+        const CCQuadList& quadList = currentPass->quadList();
+        CCQuadList::constBackToFrontIterator quadListIterator = quadList.backToFrontBegin();
+
+        for (; quadListIterator != quadList.backToFrontEnd(); ++quadListIterator) {
+            CCDrawQuad* currentQuad = quadListIterator->get();
+
+            if (currentQuad->material() != CCDrawQuad::RenderPass)
+                continue;
+
+            CCRenderPassDrawQuad* renderPassQuad = static_cast<CCRenderPassDrawQuad*>(currentQuad);
+            CCRenderSurface* targetSurface = renderPassQuad->renderPass()->targetSurface();
+
+            if (targetSurface->contentsChanged() || !targetSurface->hasCachedContentsTexture())
+                continue;
+
+            // Reserve the texture immediately. We do not need to pass in layer renderer
+            // since the texture already exists, just needs to be reserved.
+            if (!targetSurface->prepareContentsTexture(0))
+                continue;
+
+            // We are changing the vector in the middle of reverse iteration.
+            // We are guaranteed that any data from iterator to the end will not change.
+            // Capture the iterator position from the end, and restore it after the change.
+            int positionFromEnd = passes.size() - passIndex;
+            removeRenderPassesRecursive(passes, passIndex, renderPassQuad->renderPass(), skippedPasses);
+            passIndex = passes.size() - positionFromEnd;
+            ASSERT(passIndex >= 0);
+        }
+    }
+}
+
 bool CCLayerTreeHostImpl::prepareToDraw(FrameData& frame)
 {
-    TRACE_EVENT("CCLayerTreeHostImpl::prepareToDraw", this, 0);
+    TRACE_EVENT0("cc", "CCLayerTreeHostImpl::prepareToDraw");
+    ASSERT(canDraw());
 
+    frame.renderSurfaceLayerList = &m_renderSurfaceLayerList;
     frame.renderPasses.clear();
-    frame.renderSurfaceLayerList.clear();
-    m_mostRecentRenderSurfaceLayerList.clear();
+    frame.renderSurfaceLayerList->clear();
+    frame.willDrawLayers.clear();
 
-    if (!m_rootLayerImpl)
+    if (!calculateRenderPasses(frame))
         return false;
-
-    if (!calculateRenderPasses(frame.renderPasses, frame.renderSurfaceLayerList)) {
-        // We're missing textures on an animating layer. Request a commit.
-        m_client->setNeedsCommitOnImplThread();
-        return false;
-    }
-
-    m_mostRecentRenderSurfaceLayerList = frame.renderSurfaceLayerList;
 
     // If we return true, then we expect drawLayers() to be called before this function is called again.
     return true;
@@ -408,24 +474,31 @@ void CCLayerTreeHostImpl::setContentsMemoryAllocationLimitBytes(size_t bytes)
 
 void CCLayerTreeHostImpl::drawLayers(const FrameData& frame)
 {
-    TRACE_EVENT("CCLayerTreeHostImpl::drawLayers", this, 0);
-    ASSERT(m_layerRenderer);
-
-    if (!m_rootLayerImpl)
-        return;
+    TRACE_EVENT0("cc", "CCLayerTreeHostImpl::drawLayers");
+    ASSERT(canDraw());
+    ASSERT(!frame.renderPasses.isEmpty());
 
     // FIXME: use the frame begin time from the overall compositor scheduler.
     // This value is currently inaccessible because it is up in Chromium's
     // RenderWidget.
 
-    m_fpsCounter->markBeginningOfFrame(currentTime());
-    m_layerRenderer->beginDrawingFrame(m_rootLayerImpl->renderSurface());
+    // The root RenderPass is the last one to be drawn.
+    CCRenderPass* rootRenderPass = frame.renderPasses.last().get();
 
-    for (size_t i = 0; i < frame.renderPasses.size(); ++i)
-        m_layerRenderer->drawRenderPass(frame.renderPasses[i].get());
+    m_fpsCounter->markBeginningOfFrame(currentTime());
+    m_layerRenderer->beginDrawingFrame(rootRenderPass);
+
+    for (size_t i = 0; i < frame.renderPasses.size(); ++i) {
+        CCRenderPass* renderPass = frame.renderPasses[i].get();
+
+        FloatRect rootScissorRectInCurrentSurface = renderPass->targetSurface()->computeRootScissorRectInCurrentSurface(m_rootScissorRect);
+        m_layerRenderer->drawRenderPass(renderPass, rootScissorRectInCurrentSurface);
+
+        renderPass->targetSurface()->damageTracker()->didDrawDamagedArea();
+    }
 
     if (m_debugRectHistory->enabled(settings()))
-        m_debugRectHistory->saveDebugRectsForCurrentFrame(m_rootLayerImpl.get(), frame.renderSurfaceLayerList, settings());
+        m_debugRectHistory->saveDebugRectsForCurrentFrame(m_rootLayerImpl.get(), *frame.renderSurfaceLayerList, settings());
 
     if (m_headsUpDisplay->enabled(settings()))
         m_headsUpDisplay->draw(this);
@@ -440,13 +513,8 @@ void CCLayerTreeHostImpl::drawLayers(const FrameData& frame)
 
 void CCLayerTreeHostImpl::didDrawAllLayers(const FrameData& frame)
 {
-    typedef CCLayerIterator<CCLayerImpl, Vector<CCLayerImpl*>, CCRenderSurface, CCLayerIteratorActions::BackToFront> CCLayerIteratorType;
-
-    CCLayerIteratorType end = CCLayerIteratorType::end(&frame.renderSurfaceLayerList);
-    for (CCLayerIteratorType it = CCLayerIteratorType::begin(&frame.renderSurfaceLayerList); it != end; ++it) {
-        if (it.representsItself() && !it->visibleLayerRect().isEmpty())
-            it->didDraw();
-    }
+    for (size_t i = 0; i < frame.willDrawLayers.size(); ++i)
+        frame.willDrawLayers[i]->didDraw();
 }
 
 void CCLayerTreeHostImpl::finishAllRendering()
@@ -475,7 +543,7 @@ bool CCLayerTreeHostImpl::swapBuffers()
     ASSERT(m_layerRenderer);
 
     m_fpsCounter->markEndOfFrame();
-    return m_layerRenderer->swapBuffers(enclosingIntRect(m_rootDamageRect));
+    return m_layerRenderer->swapBuffers(enclosingIntRect(m_rootScissorRect));
 }
 
 void CCLayerTreeHostImpl::didLoseContext()
@@ -540,17 +608,20 @@ void CCLayerTreeHostImpl::setRootLayer(PassOwnPtr<CCLayerImpl> layer)
     m_scrollingLayerIdFromPreviousTree = -1;
 }
 
-PassOwnPtr<CCLayerImpl> CCLayerTreeHostImpl::releaseRootLayer()
+PassOwnPtr<CCLayerImpl> CCLayerTreeHostImpl::detachLayerTree()
 {
+    // Clear all data structures that have direct references to the layer tree.
     m_scrollingLayerIdFromPreviousTree = m_currentlyScrollingLayerImpl ? m_currentlyScrollingLayerImpl->id() : -1;
     m_currentlyScrollingLayerImpl = 0;
+    m_renderSurfaceLayerList.clear();
 
-    m_mostRecentRenderSurfaceLayerList.clear();
     return m_rootLayerImpl.release();
 }
 
 void CCLayerTreeHostImpl::setVisible(bool visible)
 {
+    ASSERT(CCProxy::isImplThread());
+
     if (m_visible == visible)
         return;
     m_visible = visible;
@@ -561,23 +632,30 @@ void CCLayerTreeHostImpl::setVisible(bool visible)
 
     m_layerRenderer->setVisible(visible);
 
-    const bool shouldTickInBackground = !visible && m_needsAnimateLayers;
-    m_timeSourceClientAdapter->setActive(shouldTickInBackground);
+    setBackgroundTickingEnabled(!m_visible && m_needsAnimateLayers);
 }
 
-bool CCLayerTreeHostImpl::initializeLayerRenderer(PassRefPtr<GraphicsContext3D> context)
+bool CCLayerTreeHostImpl::initializeLayerRenderer(PassRefPtr<CCGraphicsContext> context, TextureUploaderOption textureUploader)
 {
+    GraphicsContext3D* context3d = context->context3D();
+    if (!context3d) {
+        // FIXME: Implement this path for software compositing.
+        return false;
+    }
+
     OwnPtr<LayerRendererChromium> layerRenderer;
-    layerRenderer = LayerRendererChromium::create(this, context);
+    layerRenderer = LayerRendererChromium::create(this, context3d, textureUploader);
 
     // Since we now have a new context/layerRenderer, we cannot continue to use the old
     // resources (i.e. renderSurfaces and texture IDs).
     if (m_rootLayerImpl) {
-        clearRenderSurfacesOnCCLayerImplRecursive(m_rootLayerImpl.get());
+        clearRenderSurfaces();
         sendDidLoseContextRecursive(m_rootLayerImpl.get());
     }
 
     m_layerRenderer = layerRenderer.release();
+    if (m_layerRenderer)
+        m_context = context;
 
     if (!m_visible && m_layerRenderer)
          m_layerRenderer->setVisible(m_visible);
@@ -591,6 +669,10 @@ void CCLayerTreeHostImpl::setViewportSize(const IntSize& viewportSize)
         return;
 
     m_viewportSize = viewportSize;
+
+    m_deviceViewportSize = viewportSize;
+    m_deviceViewportSize.scale(m_deviceScaleFactor);
+
     updateMaxScrollPosition();
 
     if (m_layerRenderer)
@@ -624,6 +706,20 @@ static void applyPageScaleDeltaToScrollLayers(CCLayerImpl* layerImpl, float page
     for (size_t i = 0; i < layerImpl->children().size(); ++i)
         applyPageScaleDeltaToScrollLayers(layerImpl->children()[i].get(), pageScaleDelta);
 }
+
+void CCLayerTreeHostImpl::setDeviceScaleFactor(float deviceScaleFactor)
+{
+    if (deviceScaleFactor == m_deviceScaleFactor)
+        return;
+    m_deviceScaleFactor = deviceScaleFactor;
+
+    m_deviceViewportSize = viewportSize();
+    m_deviceViewportSize.scale(m_deviceScaleFactor);
+    updateMaxScrollPosition();
+    if (m_layerRenderer)
+        m_layerRenderer->viewportChanged();
+}
+
 
 void CCLayerTreeHostImpl::setPageScaleFactorAndLimits(float pageScale, float minPageScale, float maxPageScale)
 {
@@ -677,8 +773,11 @@ void CCLayerTreeHostImpl::updateMaxScrollPosition()
             viewBounds = clipLayer->bounds();
     }
     viewBounds.scale(1 / m_pageScaleDelta);
+    viewBounds.scale(m_deviceScaleFactor);
 
+    // maxScroll is computed in physical pixels, but scroll positions are in layout pixels.
     IntSize maxScroll = contentSize() - expandedIntSize(viewBounds);
+    maxScroll.scale(1 / m_deviceScaleFactor);
     // The viewport may be larger than the contents in some cases, such as
     // having a vertical scrollbar but no horizontal overflow.
     maxScroll.clampNegativeToZero();
@@ -691,52 +790,48 @@ void CCLayerTreeHostImpl::setNeedsRedraw()
     m_client->setNeedsRedrawOnImplThread();
 }
 
-bool CCLayerTreeHostImpl::ensureMostRecentRenderSurfaceLayerList()
+bool CCLayerTreeHostImpl::ensureRenderSurfaceLayerList()
 {
-    if (m_mostRecentRenderSurfaceLayerList.size())
-        return true;
-
     if (!m_rootLayerImpl)
         return false;
+
+    // We need both a non-empty render surface layer list and a root render
+    // surface to be able to iterate over the visible layers.
+    if (m_renderSurfaceLayerList.size() && m_rootLayerImpl->renderSurface())
+        return true;
 
     // If we are called after setRootLayer() but before prepareToDraw(), we need
     // to recalculate the visible layers. This prevents being unable to scroll
     // during part of a commit.
-    calculateRenderSurfaceLayerList(m_mostRecentRenderSurfaceLayerList);
+    m_renderSurfaceLayerList.clear();
+    calculateRenderSurfaceLayerList(m_renderSurfaceLayerList);
 
-    return m_mostRecentRenderSurfaceLayerList.size();
+    return m_renderSurfaceLayerList.size();
 }
 
 CCInputHandlerClient::ScrollStatus CCLayerTreeHostImpl::scrollBegin(const IntPoint& viewportPoint, CCInputHandlerClient::ScrollInputType type)
 {
-    TRACE_EVENT("CCLayerTreeHostImpl::scrollBegin", this, 0);
+    TRACE_EVENT0("cc", "CCLayerTreeHostImpl::scrollBegin");
 
-    scrollEnd();
+    ASSERT(!m_currentlyScrollingLayerImpl);
+    clearCurrentlyScrollingLayer();
 
-    if (!ensureMostRecentRenderSurfaceLayerList())
+    if (!ensureRenderSurfaceLayerList())
         return ScrollIgnored;
 
-    // First find out which layer was hit by walking the saved list of visible layers from the most recent frame.
-    CCLayerImpl* layerImpl = 0;
-    typedef CCLayerIterator<CCLayerImpl, CCLayerList, CCRenderSurface, CCLayerIteratorActions::FrontToBack> CCLayerIteratorType;
-    CCLayerIteratorType end = CCLayerIteratorType::end(&m_mostRecentRenderSurfaceLayerList);
-    for (CCLayerIteratorType it = CCLayerIteratorType::begin(&m_mostRecentRenderSurfaceLayerList); it != end; ++it) {
-        CCLayerImpl* renderSurfaceLayerImpl = (*it);
-        if (!renderSurfaceLayerImpl->screenSpaceTransform().isInvertible())
-            continue;
-        IntPoint contentPoint(renderSurfaceLayerImpl->screenSpaceTransform().inverse().mapPoint(viewportPoint));
-        if (!renderSurfaceLayerImpl->visibleLayerRect().contains(contentPoint))
-            continue;
-        layerImpl = renderSurfaceLayerImpl;
-        break;
-    }
+    IntPoint deviceViewportPoint = viewportPoint;
+    deviceViewportPoint.scale(m_deviceScaleFactor, m_deviceScaleFactor);
+
+    // First find out which layer was hit from the saved list of visible layers
+    // in the most recent frame.
+    CCLayerImpl* layerImpl = CCLayerTreeHostCommon::findLayerThatIsHitByPoint(viewportPoint, m_renderSurfaceLayerList);
 
     // Walk up the hierarchy and look for a scrollable layer.
     CCLayerImpl* potentiallyScrollingLayerImpl = 0;
     for (; layerImpl; layerImpl = layerImpl->parent()) {
         // The content layer can also block attempts to scroll outside the main thread.
-        if (layerImpl->tryScroll(viewportPoint, type) == ScrollFailed)
-            return ScrollFailed;
+        if (layerImpl->tryScroll(deviceViewportPoint, type) == ScrollOnMainThread)
+            return ScrollOnMainThread;
 
         CCLayerImpl* scrollLayerImpl = findScrollLayerForContentLayer(layerImpl);
         if (!scrollLayerImpl)
@@ -745,8 +840,8 @@ CCInputHandlerClient::ScrollStatus CCLayerTreeHostImpl::scrollBegin(const IntPoi
         ScrollStatus status = scrollLayerImpl->tryScroll(viewportPoint, type);
 
         // If any layer wants to divert the scroll event to the main thread, abort.
-        if (status == ScrollFailed)
-            return ScrollFailed;
+        if (status == ScrollOnMainThread)
+            return ScrollOnMainThread;
 
         if (status == ScrollStarted && !potentiallyScrollingLayerImpl)
             potentiallyScrollingLayerImpl = scrollLayerImpl;
@@ -761,7 +856,7 @@ CCInputHandlerClient::ScrollStatus CCLayerTreeHostImpl::scrollBegin(const IntPoi
 
 void CCLayerTreeHostImpl::scrollBy(const IntSize& scrollDelta)
 {
-    TRACE_EVENT("CCLayerTreeHostImpl::scrollBy", this, 0);
+    TRACE_EVENT0("cc", "CCLayerTreeHostImpl::scrollBy");
     if (!m_currentlyScrollingLayerImpl)
         return;
 
@@ -783,16 +878,21 @@ void CCLayerTreeHostImpl::scrollBy(const IntSize& scrollDelta)
             pendingDelta.setHeight(0);
     }
 
-    if (pendingDelta != scrollDelta) {
+    if (!scrollDelta.isZero() && pendingDelta.isEmpty()) {
         m_client->setNeedsCommitOnImplThread();
         m_client->setNeedsRedrawOnImplThread();
     }
 }
 
-void CCLayerTreeHostImpl::scrollEnd()
+void CCLayerTreeHostImpl::clearCurrentlyScrollingLayer()
 {
     m_currentlyScrollingLayerImpl = 0;
     m_scrollingLayerIdFromPreviousTree = -1;
+}
+
+void CCLayerTreeHostImpl::scrollEnd()
+{
+    clearCurrentlyScrollingLayer();
 }
 
 void CCLayerTreeHostImpl::pinchGestureBegin()
@@ -804,7 +904,7 @@ void CCLayerTreeHostImpl::pinchGestureBegin()
 void CCLayerTreeHostImpl::pinchGestureUpdate(float magnifyDelta,
                                              const IntPoint& anchor)
 {
-    TRACE_EVENT("CCLayerTreeHostImpl::pinchGestureUpdate", this, 0);
+    TRACE_EVENT0("cc", "CCLayerTreeHostImpl::pinchGestureUpdate");
 
     if (!m_rootScrollLayerImpl)
         return;
@@ -866,8 +966,9 @@ void CCLayerTreeHostImpl::computePinchZoomDeltas(CCScrollAndScaleSet* scrollInfo
     FloatSize scrollEnd = scrollBegin + anchor;
     scrollEnd.scale(m_minPageScale / scaleBegin);
     scrollEnd -= anchor;
-    scrollEnd = scrollEnd.shrunkTo(roundedIntSize(scaledContentsSize - m_viewportSize)).expandedTo(FloatSize(0, 0));
+    scrollEnd = scrollEnd.shrunkTo(roundedIntSize(scaledContentsSize - m_deviceViewportSize)).expandedTo(FloatSize(0, 0));
     scrollEnd.scale(1 / pageScaleDeltaToSend);
+    scrollEnd.scale(m_deviceScaleFactor);
 
     makeScrollAndScaleSet(scrollInfo, roundedIntSize(scrollEnd), m_minPageScale);
 }
@@ -906,10 +1007,8 @@ static void collectScrollDeltas(CCScrollAndScaleSet* scrollInfo, CCLayerImpl* la
 PassOwnPtr<CCScrollAndScaleSet> CCLayerTreeHostImpl::processScrollDeltas()
 {
     OwnPtr<CCScrollAndScaleSet> scrollInfo = adoptPtr(new CCScrollAndScaleSet());
-    collectScrollDeltas(scrollInfo.get(), m_rootLayerImpl.get());
 
-    bool didMove = scrollInfo->scrolls.size() || m_pageScaleDelta != 1;
-    if (!didMove || m_pinchGestureActive || m_pageScaleAnimation) {
+    if (m_pinchGestureActive || m_pageScaleAnimation) {
         m_sentPageScaleDelta = scrollInfo->pageScaleDelta = 1;
         if (m_pinchGestureActive)
             computePinchZoomDeltas(scrollInfo.get());
@@ -918,6 +1017,7 @@ PassOwnPtr<CCScrollAndScaleSet> CCLayerTreeHostImpl::processScrollDeltas()
         return scrollInfo.release();
     }
 
+    collectScrollDeltas(scrollInfo.get(), m_rootLayerImpl.get());
     m_sentPageScaleDelta = scrollInfo->pageScaleDelta = m_pageScaleDelta;
 
     return scrollInfo.release();
@@ -953,10 +1053,10 @@ void CCLayerTreeHostImpl::animatePageScale(double monotonicTime)
 
 void CCLayerTreeHostImpl::animateLayers(double monotonicTime, double wallClockTime)
 {
-    if (!m_settings.threadedAnimationEnabled || !m_needsAnimateLayers || !m_rootLayerImpl)
+    if (!CCSettings::acceleratedAnimationEnabled() || !m_needsAnimateLayers || !m_rootLayerImpl)
         return;
 
-    TRACE_EVENT("CCLayerTreeHostImpl::animateLayers", this, 0);
+    TRACE_EVENT0("cc", "CCLayerTreeHostImpl::animateLayers");
 
     OwnPtr<CCAnimationEventsVector> events(adoptPtr(new CCAnimationEventsVector));
 
@@ -969,8 +1069,12 @@ void CCLayerTreeHostImpl::animateLayers(double monotonicTime, double wallClockTi
     if (didAnimate)
         m_client->setNeedsRedrawOnImplThread();
 
-    const bool shouldTickInBackground = m_needsAnimateLayers && !m_visible;
-    m_timeSourceClientAdapter->setActive(shouldTickInBackground);
+    setBackgroundTickingEnabled(!m_visible && m_needsAnimateLayers);
+}
+
+double CCLayerTreeHostImpl::lowFrequencyAnimationInterval() const
+{
+    return 1;
 }
 
 void CCLayerTreeHostImpl::sendDidLoseContextRecursive(CCLayerImpl* current)
@@ -985,12 +1089,18 @@ void CCLayerTreeHostImpl::sendDidLoseContextRecursive(CCLayerImpl* current)
         sendDidLoseContextRecursive(current->children()[i].get());
 }
 
-void CCLayerTreeHostImpl::clearRenderSurfacesOnCCLayerImplRecursive(CCLayerImpl* current)
+static void clearRenderSurfacesOnCCLayerImplRecursive(CCLayerImpl* current)
 {
     ASSERT(current);
     for (size_t i = 0; i < current->children().size(); ++i)
         clearRenderSurfacesOnCCLayerImplRecursive(current->children()[i].get());
     current->clearRenderSurface();
+}
+
+void CCLayerTreeHostImpl::clearRenderSurfaces()
+{
+    clearRenderSurfacesOnCCLayerImplRecursive(m_rootLayerImpl.get());
+    m_renderSurfaceLayerList.clear();
 }
 
 String CCLayerTreeHostImpl::layerTreeAsText() const

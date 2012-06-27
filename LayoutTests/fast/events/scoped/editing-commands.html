@@ -6,8 +6,8 @@
 <pre>
 <script>
 
-if (window.layoutTestController)
-    layoutTestController.dumpAsText();
+if (window.testRunner)
+    testRunner.dumpAsText();
 
 var commands = [
     {name: 'BackColor', value: 'blue'},
@@ -47,6 +47,7 @@ var commands = [
 ];
 
 var events = {
+    'DOMCharacterDataModified': false,
     'DOMSubtreeModified': false,
     'DOMNodeInserted': false,
     'DOMNodeRemoved': false,

@@ -106,13 +106,13 @@ public:
         , m_centerZ(0)
         , m_shouldUpdateBackingStoreFromLayer(true)
         , m_textureMapper(0)
+        , m_debugBorderWidth(0)
     { }
 
     virtual ~TextureMapperLayer();
 
     void syncCompositingState(GraphicsLayerTextureMapper*, int syncOptions = 0);
     void syncCompositingState(GraphicsLayerTextureMapper*, TextureMapper*, int syncOptions = 0);
-    void syncAnimationsRecursively();
     IntSize size() const { return IntSize(m_size.width(), m_size.height()); }
     void setTransform(const TransformationMatrix&);
     void setOpacity(float value) { m_opacity = value; }
@@ -127,7 +127,8 @@ public:
     void clearBackingStoresRecursive();
 
     void setScrollPositionDeltaIfNeeded(const IntPoint&);
-    void setFixedToViewport(bool fixed) { m_fixedToViewport = fixed; }
+
+    void setDebugBorder(const Color&, float width);
 
 private:
     TextureMapperLayer* rootLayer();
@@ -152,7 +153,9 @@ private:
     void paintSelf(const TextureMapperPaintOptions&);
     void paintSelfAndChildren(const TextureMapperPaintOptions&);
     void paintSelfAndChildrenWithReplica(const TextureMapperPaintOptions&);
-    void updateBackingStore(TextureMapper*, GraphicsLayer*);
+    void updateBackingStore(TextureMapper*, GraphicsLayerTextureMapper*);
+
+    void drawRepaintCounter(GraphicsContext*, GraphicsLayer*);
 
     void syncAnimations();
     bool isVisible() const;
@@ -230,6 +233,8 @@ private:
     TextureMapperAnimations m_animations;
     IntPoint m_scrollPositionDelta;
     bool m_fixedToViewport;
+    Color m_debugBorderColor;
+    float m_debugBorderWidth;
 };
 
 

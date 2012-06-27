@@ -451,9 +451,11 @@ sub SkipFunction
 {
     my $function = shift;
 
+    return 1 if $codeGenerator->GetSequenceType($function->signature->type);
     return 1 if $codeGenerator->GetArrayType($function->signature->type);
 
     foreach my $param (@{$function->parameters}) {
+        return 1 if $codeGenerator->GetSequenceType($param->type);
         return 1 if $codeGenerator->GetArrayType($param->type);
     }
 
@@ -464,6 +466,7 @@ sub SkipAttribute
 {
     my $attribute = shift;
 
+    $codeGenerator->AssertNotSequenceType($attribute->signature->type);
     return 1 if $codeGenerator->GetArrayType($attribute->signature->type);
 
     # This is for DynamicsCompressorNode.idl
@@ -540,6 +543,7 @@ sub AddForwardDeclarationsForType
     my $public = shift;
 
     return if $codeGenerator->IsNonPointerType($type);
+    return if $codeGenerator->GetSequenceType($type);
     return if $codeGenerator->GetArrayType($type);
 
     my $class = GetClassName($type);
@@ -562,6 +566,7 @@ sub AddIncludesForType
     my $type = $codeGenerator->StripModule(shift);
 
     return if $codeGenerator->IsNonPointerType($type);
+    return if $codeGenerator->GetSequenceType($type);
     return if $codeGenerator->GetArrayType($type);
 
     if (IsNativeObjCType($type)) {
@@ -1328,7 +1333,7 @@ sub GenerateImplementation
                         $getterContentTail = "))";
                     }
                 }
-            } elsif ($codeGenerator->IsSVGAnimatedType($implClassName) and $codeGenerator->IsSVGTypeNeedingTearOff($idlType)) {
+            } elsif (($codeGenerator->IsSVGAnimatedType($implClassName) or $implClassName eq "SVGViewSpec") and $codeGenerator->IsSVGTypeNeedingTearOff($idlType)) {
                 my $idlTypeWithNamespace = GetSVGTypeWithNamespace($idlType);
                 $getterContentHead = "kit(static_cast<$idlTypeWithNamespace*>($getterContentHead)";
                 $getterContentTail .= ")";
@@ -1436,7 +1441,7 @@ sub GenerateImplementation
                 if ($svgPropertyType) {
                     $implIncludes{"ExceptionCode.h"} = 1;
                     $getterContentHead = "$getterExpressionPrefix";
-                    push(@implContent, "    if (IMPL->role() == WebCore::AnimValRole) {\n");
+                    push(@implContent, "    if (IMPL->isReadOnly()) {\n");
                     push(@implContent, "        WebCore::raiseOnDOMError(WebCore::NO_MODIFICATION_ALLOWED_ERR);\n");
                     push(@implContent, "        return;\n");
                     push(@implContent, "    }\n");
@@ -1636,7 +1641,7 @@ sub GenerateImplementation
                 $content = "${implementedBy}::" . $codeGenerator->WK_lcfirst($functionName) . "(" . join(", ", @parameterNames) . ")";
             } elsif ($svgPropertyType) {
                 $implIncludes{"ExceptionCode.h"} = 1;
-                push(@functionContent, "    if (IMPL->role() == WebCore::AnimValRole) {\n");
+                push(@functionContent, "    if (IMPL->isReadOnly()) {\n");
                 push(@functionContent, "        WebCore::raiseOnDOMError(WebCore::NO_MODIFICATION_ALLOWED_ERR);\n");
                 if ($returnType eq "void") {
                     push(@functionContent, "        return;\n");

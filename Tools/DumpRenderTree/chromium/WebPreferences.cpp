@@ -81,6 +81,7 @@ void WebPreferences::reset()
     developerExtrasEnabled = true;
     experimentalWebGLEnabled = false;
     experimentalCSSRegionsEnabled = true;
+    experimentalCSSGridLayoutEnabled = false;
     javaEnabled = false;
     javaScriptCanAccessClipboard = true;
     javaScriptCanOpenWindowsAutomatically = true;
@@ -116,7 +117,7 @@ void WebPreferences::reset()
     acceleratedPaintingEnabled = false;
     forceCompositingMode = false;
     hixie76WebSocketProtocolEnabled = true;
-    perTilePaintingEnabled = false;
+    mediaPlaybackRequiresUserGesture = false;
     mockScrollbarsEnabled = false;
     cssCustomFilterEnabled = false;
 }
@@ -195,6 +196,7 @@ void WebPreferences::applyTo(WebView* webView)
     settings->setDeveloperExtrasEnabled(developerExtrasEnabled);
     settings->setExperimentalWebGLEnabled(experimentalWebGLEnabled);
     settings->setExperimentalCSSRegionsEnabled(experimentalCSSRegionsEnabled);
+    settings->setExperimentalCSSGridLayoutEnabled(experimentalCSSGridLayoutEnabled);
     settings->setExperimentalCSSCustomFilterEnabled(cssCustomFilterEnabled);
     settings->setJavaEnabled(javaEnabled);
     settings->setJavaScriptCanAccessClipboard(javaScriptCanAccessClipboard);
@@ -224,7 +226,7 @@ void WebPreferences::applyTo(WebView* webView)
     settings->setDeferred2dCanvasEnabled(deferred2dCanvasEnabled);
     settings->setAcceleratedPaintingEnabled(acceleratedPaintingEnabled);
     settings->setHixie76WebSocketProtocolEnabled(hixie76WebSocketProtocolEnabled);
-    settings->setPerTilePaintingEnabled(perTilePaintingEnabled);
+    settings->setMediaPlaybackRequiresUserGesture(mediaPlaybackRequiresUserGesture);
     settings->setMockScrollbarsEnabled(mockScrollbarsEnabled);
 
     // Fixed values.

@@ -29,11 +29,10 @@
 #if USE(ACCELERATED_COMPOSITING)
 
 #include "LayerChromium.h"
+#include "LayerTextureUpdater.h"
 #include "cc/CCLayerTilingData.h"
-#include "cc/CCTiledLayerImpl.h"
 
 namespace WebCore {
-class LayerTextureUpdater;
 class UpdatableTile;
 
 class TiledLayerChromium : public LayerChromium {
@@ -99,8 +98,6 @@ protected:
     IntRect idlePaintRect(const IntRect& visibleLayerRect);
 
     bool skipsDraw() const { return m_skipsDraw; }
-
-    virtual void protectVisibleTileTextures() OVERRIDE;
 
     // Virtual for testing
     virtual TextureManager* textureManager() const;

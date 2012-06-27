@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2010, 2011 Apple Inc. All rights reserved.
+ * Copyright (C) 2012 Intel Corporation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -85,6 +86,13 @@
 #include <WebCore/WindowFeatures.h>
 #include <stdio.h>
 
+#if ENABLE(WEB_INTENTS)
+#include "IntentData.h"
+#include "IntentServiceInfo.h"
+#include "WebIntentData.h"
+#include "WebIntentServiceInfo.h"
+#endif
+
 #if USE(UI_SIDE_COMPOSITING)
 #include "LayerTreeHostProxyMessages.h"
 #endif
@@ -108,6 +116,9 @@
 #define MESSAGE_CHECK_URL(url) MESSAGE_CHECK_BASE(m_process->checkURLReceivedFromWebProcess(url), m_process->connection())
 
 using namespace WebCore;
+
+// Represents the number of wheel events we can hold in the queue before we start pushing them preemptively.
+static const unsigned wheelEventQueueSizeThreshold = 10;
 
 namespace WebKit {
 
@@ -161,7 +172,11 @@ WebPageProxy::WebPageProxy(PageClient* pageClient, PassRefPtr<WebProcessProxy> p
     , m_pageScaleFactor(1)
     , m_intrinsicDeviceScaleFactor(1)
     , m_customDeviceScaleFactor(0)
+#if HAVE(LAYER_HOSTING_IN_WINDOW_SERVER)
+    , m_layerHostingMode(LayerHostingModeInWindowServer)
+#else
     , m_layerHostingMode(LayerHostingModeDefault)
+#endif
     , m_drawsBackground(true)
     , m_drawsTransparentBackground(false)
     , m_areMemoryCacheClientCallsEnabled(true)
@@ -172,6 +187,7 @@ WebPageProxy::WebPageProxy(PageClient* pageClient, PassRefPtr<WebProcessProxy> p
     , m_gapBetweenPages(0)
     , m_isValid(true)
     , m_isClosed(false)
+    , m_canRunModal(false)
     , m_isInPrintingMode(false)
     , m_isPerformingDOMPrintOperation(false)
     , m_inDecidePolicyForResponse(false)
@@ -203,6 +219,7 @@ WebPageProxy::WebPageProxy(PageClient* pageClient, PassRefPtr<WebProcessProxy> p
     , m_pageCount(0)
     , m_renderTreeSize(0)
     , m_shouldSendEventsSynchronously(false)
+    , m_suppressVisibilityUpdates(false)
     , m_mediaVolume(1)
 #if ENABLE(PAGE_VISIBILITY_API)
     , m_visibilityState(PageVisibilityStateVisible)
@@ -289,7 +306,7 @@ void WebPageProxy::initializeUIClient(const WKPageUIClient* client)
     m_uiClient.initialize(client);
 
     process()->send(Messages::WebPage::SetCanRunBeforeUnloadConfirmPanel(m_uiClient.canRunBeforeUnloadConfirmPanel()), m_pageID);
-    process()->send(Messages::WebPage::SetCanRunModal(m_uiClient.canRunModal()), m_pageID);
+    setCanRunModal(m_uiClient.canRunModal());
 }
 
 void WebPageProxy::initializeFindClient(const WKPageFindClient* client)
@@ -387,6 +404,13 @@ void WebPageProxy::close()
         m_openPanelResultListener->invalidate();
         m_openPanelResultListener = 0;
     }
+
+#if ENABLE(INPUT_TYPE_COLOR)
+    if (m_colorChooser) {
+        m_colorChooser->invalidate();
+        m_colorChooser = nullptr;
+    }
+#endif
 
 #if ENABLE(GEOLOCATION)
     m_geolocationPermissionRequestManager.invalidateRequests();
@@ -657,12 +681,14 @@ void WebPageProxy::willGoToBackForwardListItem(uint64_t itemID, CoreIPC::Argumen
 
 String WebPageProxy::activeURL() const
 {
-    if (!m_mainFrame)
-        return String();
-
-    // If there is a currently pending url, it is the active URL.
+    // If there is a currently pending url, it is the active URL,
+    // even when there's no main frame yet, as it might be the
+    // first API request.
     if (!m_pendingAPIRequestURL.isNull())
         return m_pendingAPIRequestURL;
+
+    if (!m_mainFrame)
+        return String();
 
     if (!m_mainFrame->unreachableURL().isEmpty())
         return m_mainFrame->unreachableURL();
@@ -886,6 +912,7 @@ void WebPageProxy::setViewportSize(const IntSize& size)
 }
 #endif
 
+#if ENABLE(DRAG_SUPPORT)
 void WebPageProxy::dragEntered(DragData* dragData, const String& dragStorageName)
 {
     SandboxExtension::Handle sandboxExtensionHandle;
@@ -952,6 +979,7 @@ void WebPageProxy::dragEnded(const IntPoint& clientPosition, const IntPoint& glo
         return;
     process()->send(Messages::WebPage::DragEnded(clientPosition, globalPosition, operation), m_pageID);
 }
+#endif // ENABLE(DRAG_SUPPORT)
 
 void WebPageProxy::handleMouseEvent(const NativeWebMouseEvent& event)
 {
@@ -985,6 +1013,70 @@ void WebPageProxy::handleMouseEvent(const NativeWebMouseEvent& event)
         process()->send(Messages::WebPage::MouseEvent(event), m_pageID);
 }
 
+#if MERGE_WHEEL_EVENTS
+static bool canCoalesce(const WebWheelEvent& a, const WebWheelEvent& b)
+{
+    if (a.position() != b.position())
+        return false;
+    if (a.globalPosition() != b.globalPosition())
+        return false;
+    if (a.modifiers() != b.modifiers())
+        return false;
+    if (a.granularity() != b.granularity())
+        return false;
+#if PLATFORM(MAC)
+    if (a.phase() != b.phase())
+        return false;
+    if (a.momentumPhase() != b.momentumPhase())
+        return false;
+    if (a.hasPreciseScrollingDeltas() != b.hasPreciseScrollingDeltas())
+        return false;
+#endif
+
+    return true;
+}
+
+static WebWheelEvent coalesce(const WebWheelEvent& a, const WebWheelEvent& b)
+{
+    ASSERT(canCoalesce(a, b));
+
+    FloatSize mergedDelta = a.delta() + b.delta();
+    FloatSize mergedWheelTicks = a.wheelTicks() + b.wheelTicks();
+
+#if PLATFORM(MAC)
+    FloatSize mergedUnacceleratedScrollingDelta = a.unacceleratedScrollingDelta() + b.unacceleratedScrollingDelta();
+
+    return WebWheelEvent(WebEvent::Wheel, b.position(), b.globalPosition(), mergedDelta, mergedWheelTicks, b.granularity(), b.directionInvertedFromDevice(), b.phase(), b.momentumPhase(), b.hasPreciseScrollingDeltas(), b.scrollCount(), mergedUnacceleratedScrollingDelta, b.modifiers(), b.timestamp());
+#else
+    return WebWheelEvent(WebEvent::Wheel, b.position(), b.globalPosition(), mergedDelta, mergedWheelTicks, b.granularity(), b.modifiers(), b.timestamp());
+#endif
+}
+#endif // MERGE_WHEEL_EVENTS
+
+static WebWheelEvent coalescedWheelEvent(Deque<NativeWebWheelEvent>& queue, Vector<NativeWebWheelEvent>& coalescedEvents)
+{
+    ASSERT(!queue.isEmpty());
+    ASSERT(coalescedEvents.isEmpty());
+
+#if MERGE_WHEEL_EVENTS
+    NativeWebWheelEvent firstEvent = queue.takeFirst();
+    coalescedEvents.append(firstEvent);
+
+    WebWheelEvent event = firstEvent;
+    while (!queue.isEmpty() && canCoalesce(event, queue.first())) {
+        NativeWebWheelEvent firstEvent = queue.takeFirst();
+        coalescedEvents.append(firstEvent);
+        event = coalesce(event, firstEvent);
+    }
+
+    return event;
+#else
+    while (!queue.isEmpty())
+        coalescedEvents.append(queue.takeFirst());
+    return coalescedEvents.last();
+#endif
+}
+
 void WebPageProxy::handleWheelEvent(const NativeWebWheelEvent& event)
 {
     if (!isValid())
@@ -992,19 +1084,42 @@ void WebPageProxy::handleWheelEvent(const NativeWebWheelEvent& event)
 
     if (!m_currentlyProcessedWheelEvents.isEmpty()) {
         m_wheelEventQueue.append(event);
+        if (m_wheelEventQueue.size() < wheelEventQueueSizeThreshold)
+            return;
+        // The queue has too many wheel events, so push a new event.
+    }
+
+    if (!m_wheelEventQueue.isEmpty()) {
+        processNextQueuedWheelEvent();
         return;
     }
 
-    m_currentlyProcessedWheelEvents.append(event);
+    OwnPtr<Vector<NativeWebWheelEvent> > coalescedWheelEvent = adoptPtr(new Vector<NativeWebWheelEvent>);
+    coalescedWheelEvent->append(event);
+    m_currentlyProcessedWheelEvents.append(coalescedWheelEvent.release());
+    sendWheelEvent(event);
+}
 
+void WebPageProxy::processNextQueuedWheelEvent()
+{
+    OwnPtr<Vector<NativeWebWheelEvent> > nextCoalescedEvent = adoptPtr(new Vector<NativeWebWheelEvent>);
+    WebWheelEvent nextWheelEvent = coalescedWheelEvent(m_wheelEventQueue, *nextCoalescedEvent.get());
+    m_currentlyProcessedWheelEvents.append(nextCoalescedEvent.release());
+    sendWheelEvent(nextWheelEvent);
+}
+
+void WebPageProxy::sendWheelEvent(const WebWheelEvent& event)
+{
     process()->responsivenessTimer()->start();
 
     if (m_shouldSendEventsSynchronously) {
         bool handled = false;
         process()->sendSync(Messages::WebPage::WheelEventSyncForTesting(event), Messages::WebPage::WheelEventSyncForTesting::Reply(handled), m_pageID);
         didReceiveEvent(event.type(), handled);
-    } else
-        process()->send(Messages::EventDispatcher::WheelEvent(m_pageID, event, canGoBack(), canGoForward()), 0);
+        return;
+    }
+
+    process()->send(Messages::EventDispatcher::WheelEvent(m_pageID, event, canGoBack(), canGoForward()), 0);
 }
 
 void WebPageProxy::handleKeyboardEvent(const NativeWebKeyboardEvent& event)
@@ -1317,14 +1432,13 @@ void WebPageProxy::scalePage(double scale, const IntPoint& origin)
 
 void WebPageProxy::setIntrinsicDeviceScaleFactor(float scaleFactor)
 {
-    if (!isValid())
-        return;
-
     if (m_intrinsicDeviceScaleFactor == scaleFactor)
         return;
 
     m_intrinsicDeviceScaleFactor = scaleFactor;
-    m_drawingArea->deviceScaleFactorDidChange();
+
+    if (m_drawingArea)
+        m_drawingArea->deviceScaleFactorDidChange();
 }
 
 void WebPageProxy::windowScreenDidChange(PlatformDisplayID displayID)
@@ -1769,6 +1883,17 @@ void WebPageProxy::didFinishProgress()
     m_loaderClient.didFinishProgress(this);
 }
 
+#if ENABLE(WEB_INTENTS_TAG)
+void WebPageProxy::registerIntentServiceForFrame(uint64_t frameID, const IntentServiceInfo& serviceInfo)
+{
+    WebFrameProxy* frame = process()->webFrame(frameID);
+    MESSAGE_CHECK(frame);
+
+    RefPtr<WebIntentServiceInfo> webIntentServiceInfo = WebIntentServiceInfo::create(serviceInfo);
+    m_loaderClient.registerIntentServiceForFrame(this, frame, webIntentServiceInfo.get());
+}
+#endif
+
 void WebPageProxy::didStartProvisionalLoadForFrame(uint64_t frameID, const String& url, const String& unreachableURL, CoreIPC::ArgumentDecoder* arguments)
 {
     clearPendingAPIRequestURL();
@@ -1786,11 +1911,6 @@ void WebPageProxy::didStartProvisionalLoadForFrame(uint64_t frameID, const Strin
 
     frame->didStartProvisionalLoad(url);
     m_loaderClient.didStartProvisionalLoadForFrame(this, frame, userData.get());
-
-#if ENABLE(FULLSCREEN_API)
-    if (m_fullScreenManager && m_fullScreenManager->isFullScreen())
-        m_fullScreenManager->close();
-#endif
 }
 
 void WebPageProxy::didReceiveServerRedirectForProvisionalLoadForFrame(uint64_t frameID, const String& url, CoreIPC::ArgumentDecoder* arguments)
@@ -2043,6 +2163,17 @@ void WebPageProxy::didDetectXSSForFrame(uint64_t frameID, CoreIPC::ArgumentDecod
 
     m_loaderClient.didDetectXSSForFrame(this, frame, userData.get());
 }
+
+#if ENABLE(WEB_INTENTS)
+void WebPageProxy::didReceiveIntentForFrame(uint64_t frameID, const IntentData& intentData)
+{
+    WebFrameProxy* frame = process()->webFrame(frameID);
+    MESSAGE_CHECK(frame);
+
+    RefPtr<WebIntentData> webIntentData = WebIntentData::create(intentData);
+    m_loaderClient.didReceiveIntentForFrame(this, frame, webIntentData.get());
+}
+#endif
 
 void WebPageProxy::frameDidBecomeFrameSet(uint64_t frameID, bool value)
 {
@@ -2315,12 +2446,13 @@ void WebPageProxy::mouseDidMoveOverElement(const WebHitTestResult::Data& hitTest
     m_uiClient.mouseDidMoveOverElement(this, hitTestResultData, modifiers, userData.get());
 }
 
-void WebPageProxy::missingPluginButtonClicked(const String& mimeType, const String& url, const String& pluginsPageURL)
+void WebPageProxy::unavailablePluginButtonClicked(uint32_t opaquePluginUnavailabilityReason, const String& mimeType, const String& url, const String& pluginsPageURL)
 {
     MESSAGE_CHECK_URL(url);
     MESSAGE_CHECK_URL(pluginsPageURL);
 
-    m_uiClient.missingPluginButtonClicked(this, mimeType, url, pluginsPageURL);
+    WKPluginUnavailabilityReason pluginUnavailabilityReason = static_cast<WKPluginUnavailabilityReason>(opaquePluginUnavailabilityReason);
+    m_uiClient.unavailablePluginButtonClicked(this, pluginUnavailabilityReason, mimeType, url, pluginsPageURL);
 }
 
 void WebPageProxy::setToolbarsAreVisible(bool toolbarsAreVisible)
@@ -2515,6 +2647,50 @@ void WebPageProxy::certificateVerificationRequest(const String& hostname, bool& 
 void WebPageProxy::needTouchEvents(bool needTouchEvents)
 {
     m_needTouchEvents = needTouchEvents;
+}
+#endif
+
+#if ENABLE(INPUT_TYPE_COLOR)
+void WebPageProxy::showColorChooser(const WebCore::Color& initialColor)
+{
+    ASSERT(!m_colorChooser);
+
+    m_colorChooser = m_pageClient->createColorChooserProxy(this, initialColor);
+}
+
+void WebPageProxy::setColorChooserColor(const WebCore::Color& color)
+{
+    ASSERT(m_colorChooser);
+
+    m_colorChooser->setSelectedColor(color);
+}
+
+void WebPageProxy::endColorChooser()
+{
+    ASSERT(m_colorChooser);
+
+    m_colorChooser->endChooser();
+}
+
+void WebPageProxy::didChooseColor(const WebCore::Color& color)
+{
+    if (!isValid())
+        return;
+
+    process()->send(Messages::WebPage::DidChooseColor(color), m_pageID);
+}
+
+void WebPageProxy::didEndColorChooser()
+{
+    if (!isValid())
+        return;
+
+    ASSERT(m_colorChooser);
+
+    m_colorChooser->invalidate();
+    m_colorChooser = nullptr;
+
+    process()->send(Messages::WebPage::DidEndColorChooser(), m_pageID);
 }
 #endif
 
@@ -2973,68 +3149,6 @@ void WebPageProxy::setCursorHiddenUntilMouseMoves(bool hiddenUntilMouseMoves)
     m_pageClient->setCursorHiddenUntilMouseMoves(hiddenUntilMouseMoves);
 }
 
-#if MERGE_WHEEL_EVENTS
-static bool canCoalesce(const WebWheelEvent& a, const WebWheelEvent& b)
-{
-    if (a.position() != b.position())
-        return false;
-    if (a.globalPosition() != b.globalPosition())
-        return false;
-    if (a.modifiers() != b.modifiers())
-        return false;
-    if (a.granularity() != b.granularity())
-        return false;
-#if PLATFORM(MAC)
-    if (a.phase() != b.phase())
-        return false;
-    if (a.momentumPhase() != b.momentumPhase())
-        return false;
-    if (a.hasPreciseScrollingDeltas() != b.hasPreciseScrollingDeltas())
-        return false;
-#endif
-
-    return true;
-}
-
-static WebWheelEvent coalesce(const WebWheelEvent& a, const WebWheelEvent& b)
-{
-    ASSERT(canCoalesce(a, b));
-
-    FloatSize mergedDelta = a.delta() + b.delta();
-    FloatSize mergedWheelTicks = a.wheelTicks() + b.wheelTicks();
-
-#if PLATFORM(MAC)
-    return WebWheelEvent(WebEvent::Wheel, b.position(), b.globalPosition(), mergedDelta, mergedWheelTicks, b.granularity(), b.phase(), b.momentumPhase(), b.hasPreciseScrollingDeltas(), b.modifiers(), b.timestamp(), b.directionInvertedFromDevice());
-#else
-    return WebWheelEvent(WebEvent::Wheel, b.position(), b.globalPosition(), mergedDelta, mergedWheelTicks, b.granularity(), b.modifiers(), b.timestamp());
-#endif
-}
-#endif
-
-static WebWheelEvent coalescedWheelEvent(Deque<NativeWebWheelEvent>& queue, Vector<NativeWebWheelEvent>& coalescedEvents)
-{
-    ASSERT(!queue.isEmpty());
-    ASSERT(coalescedEvents.isEmpty());
-
-#if MERGE_WHEEL_EVENTS
-    NativeWebWheelEvent firstEvent = queue.takeFirst();
-    coalescedEvents.append(firstEvent);
-
-    WebWheelEvent event = firstEvent;
-    while (!queue.isEmpty() && canCoalesce(event, queue.first())) {
-        NativeWebWheelEvent firstEvent = queue.takeFirst();
-        coalescedEvents.append(firstEvent);
-        event = coalesce(event, firstEvent);
-    }
-
-    return event;
-#else
-    while (!queue.isEmpty())
-        coalescedEvents.append(queue.takeFirst());
-    return coalescedEvents.last();
-#endif
-}
-
 void WebPageProxy::didReceiveEvent(uint32_t opaqueType, bool handled)
 {
     WebEvent::Type type = static_cast<WebEvent::Type>(opaqueType);
@@ -3097,19 +3211,14 @@ void WebPageProxy::didReceiveEvent(uint32_t opaqueType, bool handled)
     case WebEvent::Wheel: {
         ASSERT(!m_currentlyProcessedWheelEvents.isEmpty());
 
+        OwnPtr<Vector<NativeWebWheelEvent> > oldestCoalescedEvent = m_currentlyProcessedWheelEvents.takeFirst();
+
         // FIXME: Dispatch additional events to the didNotHandleWheelEvent client function.
         if (!handled && m_uiClient.implementsDidNotHandleWheelEvent())
-            m_uiClient.didNotHandleWheelEvent(this, m_currentlyProcessedWheelEvents.last());
+            m_uiClient.didNotHandleWheelEvent(this, oldestCoalescedEvent->last());
 
-        m_currentlyProcessedWheelEvents.clear();
-
-        if (!m_wheelEventQueue.isEmpty()) {
-            WebWheelEvent newWheelEvent = coalescedWheelEvent(m_wheelEventQueue, m_currentlyProcessedWheelEvents);
-
-            process()->responsivenessTimer()->start();
-            process()->send(Messages::EventDispatcher::WheelEvent(m_pageID, newWheelEvent, canGoBack(), canGoForward()), 0);
-        }
-
+        if (!m_wheelEventQueue.isEmpty())
+            processNextQueuedWheelEvent();
         break;
     }
 
@@ -3337,6 +3446,13 @@ void WebPageProxy::processDidCrash()
         m_openPanelResultListener = nullptr;
     }
 
+#if ENABLE(INPUT_TYPE_COLOR)
+    if (m_colorChooser) {
+        m_colorChooser->invalidate();
+        m_colorChooser = nullptr;
+    }
+#endif
+
 #if ENABLE(GEOLOCATION)
     m_geolocationPermissionRequestManager.invalidateRequests();
 #endif
@@ -3435,12 +3551,14 @@ WebPageCreationParameters WebPageProxy::creationParameters() const
     parameters.sessionState = SessionState(m_backForwardList->entries(), m_backForwardList->currentIndex());
     parameters.highestUsedBackForwardItemID = WebBackForwardListItem::highedUsedItemID();
     parameters.canRunBeforeUnloadConfirmPanel = m_uiClient.canRunBeforeUnloadConfirmPanel();
-    parameters.canRunModal = m_uiClient.canRunModal();
+    parameters.canRunModal = m_canRunModal;
     parameters.deviceScaleFactor = m_intrinsicDeviceScaleFactor;
     parameters.mediaVolume = m_mediaVolume;
 
 #if PLATFORM(MAC)
     parameters.isSmartInsertDeleteEnabled = m_isSmartInsertDeleteEnabled;
+    parameters.layerHostingMode = m_layerHostingMode;
+    parameters.colorSpace = m_pageClient->colorSpace();
 #endif
 
 #if PLATFORM(WIN)
@@ -3564,6 +3682,12 @@ void WebPageProxy::runModal()
     // Since runModal() can (and probably will) spin a nested run loop we need to turn off the responsiveness timer.
     process()->responsivenessTimer()->stop();
 
+    // Our Connection's run loop might have more messages waiting to be handled after this RunModal message.
+    // To make sure they are handled inside of the the nested modal run loop we must first signal the Connection's
+    // run loop so we're guaranteed that it has a chance to wake up.
+    // See http://webkit.org/b/89590 for more discussion.
+    process()->connection()->wakeUpRunLoop();
+
     m_uiClient.runModal(this);
 }
 
@@ -3603,6 +3727,22 @@ void WebPageProxy::didFailToInitializePlugin(const String& mimeType)
     m_loaderClient.didFailToInitializePlugin(this, mimeType);
 }
 
+void WebPageProxy::didBlockInsecurePluginVersion(const String& mimeType, const String& urlString)
+{
+    String pluginIdentifier;
+    String pluginVersion;
+    String newMimeType = mimeType;
+
+#if PLATFORM(MAC)
+    PluginModuleInfo plugin = m_process->context()->pluginInfoStore().findPlugin(newMimeType, KURL(KURL(), urlString));
+
+    pluginIdentifier = plugin.bundleIdentifier;
+    pluginVersion = plugin.versionString;
+#endif
+
+    m_loaderClient.didBlockInsecurePluginVersion(this, newMimeType, pluginIdentifier, pluginVersion);
+}
+
 bool WebPageProxy::willHandleHorizontalScrollEvents() const
 {
     return !m_canShortCircuitHorizontalWheelEvents;
@@ -3616,6 +3756,23 @@ void WebPageProxy::didFinishLoadingDataForCustomRepresentation(const String& sug
 void WebPageProxy::backForwardRemovedItem(uint64_t itemID)
 {
     process()->send(Messages::WebPage::DidRemoveBackForwardItem(itemID), m_pageID);
+}
+
+void WebPageProxy::setCanRunModal(bool canRunModal)
+{
+    if (!isValid())
+        return;
+
+    // It's only possible to change the state for a WebPage which
+    // already qualifies for running modal child web pages, otherwise
+    // there's no other possibility than not allowing it.
+    m_canRunModal = m_uiClient.canRunModal() && canRunModal;
+    process()->send(Messages::WebPage::SetCanRunModal(m_canRunModal), m_pageID);
+}
+
+bool WebPageProxy::canRunModal()
+{
+    return isValid() ? m_canRunModal : false;
 }
 
 void WebPageProxy::beginPrinting(WebFrameProxy* frame, const PrintInfo& printInfo)
@@ -3767,6 +3924,29 @@ void WebPageProxy::handleAlternativeTextUIResult(const String& result)
         process()->send(Messages::WebPage::HandleAlternativeTextUIResult(result), m_pageID, 0);
 #endif
 }
+
+#if USE(DICTATION_ALTERNATIVES)
+void WebPageProxy::showDictationAlternativeUI(const WebCore::FloatRect& boundingBoxOfDictatedText, uint64_t dictationContext)
+{
+    m_pageClient->showDictationAlternativeUI(boundingBoxOfDictatedText, dictationContext);
+}
+
+void WebPageProxy::dismissDictationAlternativeUI()
+{
+    m_pageClient->dismissDictationAlternativeUI();
+}
+
+void WebPageProxy::removeDictationAlternatives(uint64_t dictationContext)
+{
+    m_pageClient->removeDictationAlternatives(dictationContext);
+}
+
+void WebPageProxy::dictationAlternatives(uint64_t dictationContext, Vector<String>& result)
+{
+    result = m_pageClient->dictationAlternatives(dictationContext);
+}
+#endif
+
 #endif // PLATFORM(MAC)
 
 } // namespace WebKit

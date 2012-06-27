@@ -27,7 +27,6 @@
 #include "GraphicsContext.h"
 #include "InlineTextBox.h"
 #include "HitTestResult.h"
-#include "RootInlineBox.h"
 #include "RenderBlock.h"
 #include "RenderInline.h"
 #include "RenderLayer.h"
@@ -45,7 +44,7 @@ using namespace std;
 
 namespace WebCore {
 
-class SameSizeAsInlineFlowBox : public InlineBox {
+struct SameSizeAsInlineFlowBox : public InlineBox {
     void* pointers[5];
     uint32_t bitfields : 24;
 };
@@ -317,6 +316,11 @@ void InlineFlowBox::determineSpacingForFlowBoxes(bool lastLine, bool isLogically
         // we know the inline began on this line (unless we are a continuation).
         RenderLineBoxList* lineBoxList = rendererLineBoxes();
         if (!lineBoxList->firstLineBox()->isConstructed() && !renderer()->isInlineElementContinuation()) {
+#if ENABLE(CSS_BOX_DECORATION_BREAK)
+            if (renderer()->style()->boxDecorationBreak() == DCLONE)
+                includeLeftEdge = includeRightEdge = true;
+            else
+#endif
             if (ltr && lineBoxList->firstLineBox() == this)
                 includeLeftEdge = true;
             else if (!ltr && lineBoxList->lastLineBox() == this)
@@ -331,7 +335,12 @@ void InlineFlowBox::determineSpacingForFlowBoxes(bool lastLine, bool isLogically
             // (1) The next line was not created, or it is constructed. We check the previous line for rtl.
             // (2) The logicallyLastRun is not a descendant of this renderer.
             // (3) The logicallyLastRun is a descendant of this renderer, but it is the last child of this renderer and it does not wrap to the next line.
-            
+#if ENABLE(CSS_BOX_DECORATION_BREAK)
+            // (4) The decoration break is set to clone therefore there will be borders on every sides.
+            if (renderer()->style()->boxDecorationBreak() == DCLONE)
+                includeLeftEdge = includeRightEdge = true;
+            else
+#endif
             if (ltr) {
                 if (!nextLineBox()
                     && ((lastLine || isLastObjectOnLine) && !inlineFlow->continuation()))
@@ -517,8 +526,8 @@ void InlineFlowBox::computeLogicalBoxHeights(RootInlineBox* rootBox, LayoutUnit&
     
     if (isRootInlineBox()) {
         // Examine our root box.
-        LayoutUnit ascent = 0;
-        LayoutUnit descent = 0;
+        int ascent = 0;
+        int descent = 0;
         rootBox->ascentAndDescentForBox(rootBox, textBoxDataMap, ascent, descent, affectsAscent, affectsDescent);
         if (strictMode || hasTextChildren() || (!checkChildren && hasTextDescendants())) {
             if (maxAscent < ascent || !setMaxAscent) {
@@ -549,8 +558,8 @@ void InlineFlowBox::computeLogicalBoxHeights(RootInlineBox* rootBox, LayoutUnit&
         // root box's baseline, and it is positive if the child box's baseline is below the root box's baseline.
         curr->setLogicalTop(rootBox->verticalPositionForBox(curr, verticalPositionCache));
         
-        LayoutUnit ascent = 0;
-        LayoutUnit descent = 0;
+        int ascent = 0;
+        int descent = 0;
         rootBox->ascentAndDescentForBox(curr, textBoxDataMap, ascent, descent, affectsAscent, affectsDescent);
 
         LayoutUnit boxHeight = ascent + descent;
@@ -962,18 +971,18 @@ void InlineFlowBox::setOverflowFromLogicalRects(const LayoutRect& logicalLayoutO
     setVisualOverflow(visualOverflow, lineTop, lineBottom);
 }
 
-bool InlineFlowBox::nodeAtPoint(const HitTestRequest& request, HitTestResult& result, const LayoutPoint& pointInContainer, const LayoutPoint& accumulatedOffset, LayoutUnit lineTop, LayoutUnit lineBottom)
+bool InlineFlowBox::nodeAtPoint(const HitTestRequest& request, HitTestResult& result, const HitTestPoint& pointInContainer, const LayoutPoint& accumulatedOffset, LayoutUnit lineTop, LayoutUnit lineBottom)
 {
     LayoutRect overflowRect(visualOverflowRect(lineTop, lineBottom));
     flipForWritingMode(overflowRect);
     overflowRect.moveBy(accumulatedOffset);
-    if (!overflowRect.intersects(result.rectForPoint(pointInContainer)))
+    if (!pointInContainer.intersects(overflowRect))
         return false;
 
     // Check children first.
     for (InlineBox* curr = lastChild(); curr; curr = curr->prevOnLine()) {
         if ((curr->renderer()->isText() || !curr->boxModelObject()->hasSelfPaintingLayer()) && curr->nodeAtPoint(request, result, pointInContainer, accumulatedOffset, lineTop, lineBottom)) {
-            renderer()->updateHitTestResult(result, pointInContainer - toLayoutSize(accumulatedOffset));
+            renderer()->updateHitTestResult(result, pointInContainer.point() - toLayoutSize(accumulatedOffset));
             return true;
         }
     }
@@ -995,18 +1004,18 @@ bool InlineFlowBox::nodeAtPoint(const HitTestRequest& request, HitTestResult& re
         top = max(rootBox->lineTop(), top);
         logicalHeight = bottom - top;
     }
-    
+
     // Move x/y to our coordinates.
     LayoutRect rect(minX, minY, width, height);
     flipForWritingMode(rect);
     rect.moveBy(accumulatedOffset);
 
-    if (visibleToHitTesting() && rect.intersects(result.rectForPoint(pointInContainer))) {
-        renderer()->updateHitTestResult(result, flipForWritingMode(pointInContainer - toLayoutSize(accumulatedOffset))); // Don't add in m_x or m_y here, we want coords in the containing block's space.
+    if (visibleToHitTesting() && pointInContainer.intersects(rect)) {
+        renderer()->updateHitTestResult(result, flipForWritingMode(pointInContainer.point() - toLayoutSize(accumulatedOffset))); // Don't add in m_x or m_y here, we want coords in the containing block's space.
         if (!result.addNodeToRectBasedTestResult(renderer()->node(), pointInContainer, rect))
             return true;
     }
-    
+
     return false;
 }
 
@@ -1103,6 +1112,13 @@ void InlineFlowBox::paintFillLayer(const PaintInfo& paintInfo, const Color& c, c
     bool hasFillImage = img && img->canRender(renderer(), renderer()->style()->effectiveZoom());
     if ((!hasFillImage && !renderer()->style()->hasBorderRadius()) || (!prevLineBox() && !nextLineBox()) || !parent())
         boxModelObject()->paintFillLayerExtended(paintInfo, c, fillLayer, rect, BackgroundBleedNone, this, rect.size(), op);
+#if ENABLE(CSS_BOX_DECORATION_BREAK)
+    else if (renderer()->style()->boxDecorationBreak() == DCLONE) {
+        GraphicsContextStateSaver stateSaver(*paintInfo.context);
+        paintInfo.context->clip(LayoutRect(rect.x(), rect.y(), width(), height()));
+        boxModelObject()->paintFillLayerExtended(paintInfo, c, fillLayer, rect, BackgroundBleedNone, this, rect.size(), op);
+    }
+#endif
     else {
         // We have a fill image that spans multiple lines.
         // We need to adjust tx and ty by the width of all previous lines.

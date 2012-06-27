@@ -32,6 +32,7 @@
 #import "WebViewData.h"
 
 #import "DOMCSSStyleDeclarationInternal.h"
+#import "DOMDocumentInternal.h"
 #import "DOMNodeInternal.h"
 #import "DOMRangeInternal.h"
 #import "WebAlternativeTextClient.h"
@@ -71,6 +72,7 @@
 #import "WebInspector.h"
 #import "WebInspectorClient.h"
 #import "WebKitErrors.h"
+#import "WebKitFullScreenListener.h"
 #import "WebKitLogging.h"
 #import "WebKitNSStringExtras.h"
 #import "WebKitStatisticsPrivate.h"
@@ -109,6 +111,7 @@
 #import <JavaScriptCore/APICast.h>
 #import <JavaScriptCore/JSValueRef.h>
 #import <WebCore/AbstractDatabase.h>
+#import <WebCore/AlternativeTextUIController.h>
 #import <WebCore/ApplicationCacheStorage.h>
 #import <WebCore/BackForwardListImpl.h>
 #import <WebCore/MemoryCache.h>
@@ -744,7 +747,9 @@ static bool shouldRespectPriorityInCSSAttributeSetters()
     pageClients.chromeClient = new WebChromeClient(self);
     pageClients.contextMenuClient = new WebContextMenuClient(self);
     pageClients.editorClient = new WebEditorClient(self);
+#if ENABLE(DRAG_SUPPORT)
     pageClients.dragClient = new WebDragClient(self);
+#endif
     pageClients.inspectorClient = new WebInspectorClient(self);
     pageClients.alternativeTextClient = new WebAlternativeTextClient(self);
     _private->page = new Page(pageClients);
@@ -1350,6 +1355,12 @@ static bool fastDocumentTeardownEnabled()
     return needsQuirk;
 }
 
+static bool needsDidFinishLoadOrderQuirk()
+{
+    static bool needsQuirk = !WebKitLinkedOnOrAfter(WEBKIT_FIRST_VERSION_WITH_CORRECT_DID_FINISH_LOAD_ORDER) && applicationIsAppleMail();
+    return needsQuirk;
+}
+
 static bool needsSelfRetainWhileLoadingQuirk()
 {
     static bool needsQuirk = applicationIsAperture();
@@ -1442,7 +1453,6 @@ static bool needsSelfRetainWhileLoadingQuirk()
     settings->setTextAreasAreResizable([preferences textAreasAreResizable]);
     settings->setShrinksStandaloneImagesToFit([preferences shrinksStandaloneImagesToFit]);
     settings->setEditableLinkBehavior(core([preferences editableLinkBehavior]));
-    settings->setEditingBehaviorType(core([preferences editingBehavior]));
     settings->setTextDirectionSubmenuInclusionBehavior(core([preferences textDirectionSubmenuInclusionBehavior]));
     settings->setDOMPasteAllowed([preferences isDOMPasteAllowed]);
     settings->setUsesPageCache([self usesPageCache]);
@@ -1450,6 +1460,7 @@ static bool needsSelfRetainWhileLoadingQuirk()
     settings->setShowsURLsInToolTips([preferences showsURLsInToolTips]);
     settings->setShowsToolTipOverTruncatedText([preferences showsToolTipOverTruncatedText]);
     settings->setDeveloperExtrasEnabled([preferences developerExtrasEnabled]);
+    settings->setJavaScriptExperimentsEnabled([preferences javaScriptExperimentsEnabled]);
     settings->setAuthorAndUserStylesEnabled([preferences authorAndUserStylesEnabled]);
     settings->setApplicationChromeMode([preferences applicationChromeModeEnabled]);
     if ([preferences userStyleSheetEnabled]) {
@@ -1491,6 +1502,7 @@ static bool needsSelfRetainWhileLoadingQuirk()
     settings->setCSSCustomFilterEnabled([preferences cssCustomFilterEnabled]);
 #endif
     settings->setCSSRegionsEnabled([preferences cssRegionsEnabled]);
+    settings->setCSSGridLayoutEnabled([preferences cssGridLayoutEnabled]);
 #if ENABLE(FULLSCREEN_API)
     settings->setFullScreenEnabled([preferences fullScreenEnabled]);
 #endif
@@ -1530,6 +1542,8 @@ static bool needsSelfRetainWhileLoadingQuirk()
 
     settings->setShouldRespectImageOrientation([preferences shouldRespectImageOrientation]);
     settings->setNeedsIsLoadingInAPISenseQuirk([self _needsIsLoadingInAPISenseQuirk]);
+    settings->setRequestAnimationFrameEnabled([preferences requestAnimationFrameEnabled]);
+    settings->setNeedsDidFinishLoadOrderQuirk(needsDidFinishLoadOrderQuirk());
     
     NSTimeInterval timeout = [preferences incrementalRenderingSuppressionTimeoutInSeconds];
     if (timeout > 0)
@@ -1851,8 +1865,17 @@ static inline IMP getMethod(id o, SEL s)
     [NSApp setWindowsNeedUpdate:YES];
 
 #if ENABLE(FULLSCREEN_API)
-    if (_private->newFullscreenController && [_private->newFullscreenController isFullScreen])
-        [_private->newFullscreenController close];
+    Document* document = core([frame DOMDocument]);
+    if (Element* element = document ? document->webkitCurrentFullScreenElement() : 0) {
+        SEL selector = @selector(webView:closeFullScreenWithListener:);
+        if (_private->UIDelegate && [_private->UIDelegate respondsToSelector:selector]) {
+            WebKitFullScreenListener *listener = [[WebKitFullScreenListener alloc] initWithElement:element];
+            CallUIDelegate(self, selector, listener);
+            [listener release];
+        } else if (_private->newFullscreenController && [_private->newFullscreenController isFullScreen]) {
+            [_private->newFullscreenController close];
+        }
+    }
 #endif
 }
 
@@ -1942,12 +1965,14 @@ static inline IMP getMethod(id o, SEL s)
                         types:types];
 }
 
+#if ENABLE(DRAG_SUPPORT)
 - (void)_setInitiatedDrag:(BOOL)initiatedDrag
 {
     if (!_private->page)
         return;
     _private->page->dragController()->setDidInitiateDrag(initiatedDrag);
 }
+#endif
 
 #if ENABLE(DASHBOARD_SUPPORT)
 
@@ -2218,14 +2243,14 @@ static inline IMP getMethod(id o, SEL s)
 - (BOOL)_cookieEnabled
 {
     if (_private->page)
-        return _private->page->cookieEnabled();
+        return _private->page->settings()->cookieEnabled();
     return YES;
 }
 
 - (void)_setCookieEnabled:(BOOL)enable
 {
     if (_private->page)
-        _private->page->setCookieEnabled(enable);
+        _private->page->settings()->setCookieEnabled(enable);
 }
 
 - (void)_setAdditionalWebPlugInPaths:(NSArray *)newPaths
@@ -2790,11 +2815,17 @@ static PassOwnPtr<Vector<String> > toStringVector(NSArray* patterns)
     case WebPaginationModeUnpaginated:
         pagination.mode = Page::Pagination::Unpaginated;
         break;
-    case WebPaginationModeHorizontal:
-        pagination.mode = Page::Pagination::HorizontallyPaginated;
+    case WebPaginationModeLeftToRight:
+        pagination.mode = Page::Pagination::LeftToRightPaginated;
         break;
-    case WebPaginationModeVertical:
-        pagination.mode = Page::Pagination::VerticallyPaginated;
+    case WebPaginationModeRightToLeft:
+        pagination.mode = Page::Pagination::RightToLeftPaginated;
+        break;
+    case WebPaginationModeTopToBottom:
+        pagination.mode = Page::Pagination::TopToBottomPaginated;
+        break;
+    case WebPaginationModeBottomToTop:
+        pagination.mode = Page::Pagination::BottomToTopPaginated;
         break;
     default:
         return;
@@ -2812,10 +2843,14 @@ static PassOwnPtr<Vector<String> > toStringVector(NSArray* patterns)
     switch (page->pagination().mode) {
     case Page::Pagination::Unpaginated:
         return WebPaginationModeUnpaginated;
-    case Page::Pagination::HorizontallyPaginated:
-        return WebPaginationModeHorizontal;
-    case Page::Pagination::VerticallyPaginated:
-        return WebPaginationModeVertical;
+    case Page::Pagination::LeftToRightPaginated:
+        return WebPaginationModeLeftToRight;
+    case Page::Pagination::RightToLeftPaginated:
+        return WebPaginationModeRightToLeft;
+    case Page::Pagination::TopToBottomPaginated:
+        return WebPaginationModeTopToBottom;
+    case Page::Pagination::BottomToTopPaginated:
+        return WebPaginationModeBottomToTop;
     }
 
     ASSERT_NOT_REACHED();
@@ -4002,6 +4037,7 @@ static NSString * const backingPropertyOldScaleFactorKey = @"NSBackingPropertyOl
     return [self _elementAtWindowPoint:[self convertPoint:point toView:nil]];
 }
 
+#if ENABLE(DRAG_SUPPORT)
 // The following 2 internal NSView methods are called on the drag destination to make scrolling while dragging work.
 // Scrolling while dragging will only work if the drag destination is in a scroll view. The WebView is the drag destination. 
 // When dragging to a WebView, the document subview should scroll, but it doesn't because it is not the drag destination. 
@@ -4084,6 +4120,7 @@ static NSString * const backingPropertyOldScaleFactorKey = @"NSBackingPropertyOl
         return self;
     return hitView;
 }
+#endif
 
 - (BOOL)acceptsFirstResponder
 {
@@ -4244,14 +4281,18 @@ static WebFrame *incrementFrame(WebFrame *frame, WebFindOptions options = 0)
 
 - (void)moveDragCaretToPoint:(NSPoint)point
 {
+#if ENABLE(DRAG_SUPPORT)
     if (Page* page = core(self))
         page->dragController()->placeDragCaret(IntPoint([self convertPoint:point toView:nil]));
+#endif
 }
 
 - (void)removeDragCaret
 {
+#if ENABLE(DRAG_SUPPORT)
     if (Page* page = core(self))
         page->dragController()->dragEnded();
+#endif
 }
 
 - (void)setMainFrameURL:(NSString *)URLString
@@ -5506,16 +5547,6 @@ static NSAppleEventDescriptor* aeDescFromJSValue(ExecState* exec, JSValue jsValu
 
 #endif
 
-#if !defined(BUILDING_ON_LEOPARD) && !defined(BUILDING_ON_SNOW_LEOPARD)
-- (void)handleCorrectionPanelResult:(NSString*)result
-{
-    WebFrame *webFrame = [self _selectedOrMainFrame];
-    Frame* coreFrame = core(webFrame);
-    if (coreFrame)
-        coreFrame->editor()->handleAlternativeTextUIResult(result);
-}
-#endif
-
 @end
 
 @implementation WebView (WebViewUndoableEditing)
@@ -6377,6 +6408,50 @@ static void glibContextIterationCallback(CFRunLoopObserverRef, CFRunLoopActivity
         CFRunLoopAddObserver(cfLoop, _private->glibRunLoopObserver, kCFRunLoopDefaultMode);
     }
 
+}
+#endif
+
+#if USE(AUTOCORRECTION_PANEL)
+- (void)handleAcceptedAlternativeText:(NSString*)text
+{
+    WebFrame *webFrame = [self _selectedOrMainFrame];
+    Frame* coreFrame = core(webFrame);
+    if (coreFrame)
+        coreFrame->editor()->handleAlternativeTextUIResult(text);
+}
+#endif
+
+#if USE(DICTATION_ALTERNATIVES)
+- (void)_getWebCoreDictationAlternatives:(Vector<DictationAlternative>&)alternatives fromTextAlternatives:(const Vector<TextAlternativeWithRange>&)alternativesWithRange
+{
+    for (size_t i = 0; i < alternativesWithRange.size(); ++i) {
+        const TextAlternativeWithRange& alternativeWithRange = alternativesWithRange[i];
+        uint64_t dictationContext = _private->m_alternativeTextUIController->addAlternatives(alternativeWithRange.alternatives);
+        if (dictationContext)
+            alternatives.append(DictationAlternative(alternativeWithRange.range.location, alternativeWithRange.range.length, dictationContext));
+    }
+}
+
+- (void)_showDictationAlternativeUI:(const WebCore::FloatRect&)boundingBoxOfDictatedText forDictationContext:(uint64_t)dictationContext
+{
+    _private->m_alternativeTextUIController->showAlternatives(self, [self _convertRectFromRootView:boundingBoxOfDictatedText], dictationContext, ^(NSString* acceptedAlternative) {
+        [self handleAcceptedAlternativeText:acceptedAlternative];
+    });
+}
+
+- (void)_dismissDictationAlternativeUI
+{
+    _private->m_alternativeTextUIController->dismissAlternatives();
+}
+
+- (void)_removeDictationAlternatives:(uint64_t)dictationContext
+{
+    _private->m_alternativeTextUIController->removeAlternatives(dictationContext);
+}
+
+- (Vector<String>)_dictationAlternatives:(uint64_t)dictationContext
+{
+    return _private->m_alternativeTextUIController->alternativesForContext(dictationContext);
 }
 #endif
 

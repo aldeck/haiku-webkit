@@ -46,7 +46,7 @@ from webkitpy.layout_tests.views import printing
 _log = logging.getLogger(__name__)
 
 
-def lint(port, options, expectations_class):
+def lint(port, options):
     host = port.host
     if options.platform:
         ports_to_lint = [port]
@@ -62,12 +62,7 @@ def lint(port, options, expectations_class):
             continue
 
         try:
-            expectations_class(port_to_lint,
-                tests=None,
-                expectations=port_to_lint.test_expectations(),
-                test_config=port_to_lint.test_configuration(),
-                is_lint_mode=True,
-                overrides=port_to_lint.test_expectations_overrides())
+            test_expectations.TestExpectations(port_to_lint, is_lint_mode=True)
         except test_expectations.ParseError, e:
             lint_failed = True
             _log.error('')
@@ -97,7 +92,7 @@ def run(port, options, args, regular_output=sys.stderr, buildbot_output=sys.stdo
         return 0
 
     if options.lint_test_files:
-        return lint(port, options, test_expectations.TestExpectations)
+        return lint(port, options)
 
     # We wrap any parts of the run that are slow or likely to raise exceptions
     # in a try/finally to ensure that we clean up the logging configuration.
@@ -162,8 +157,8 @@ def _set_up_derived_options(port, options):
             normalized_platform_directories.append(port.host.filesystem.normpath(path))
         options.additional_platform_directory = normalized_platform_directories
 
-    if not options.http and options.force:
-        warnings.append("--no-http is ignored since --force is also provided")
+    if not options.http and options.skipped in ('ignore', 'only'):
+        warnings.append("--force/--skipped=%s overrides --no-http." % (options.skipped))
         options.http = True
 
     if options.skip_pixel_test_if_no_baseline and not options.pixel_tests:
@@ -171,6 +166,10 @@ def _set_up_derived_options(port, options):
 
     if options.ignore_metrics and (options.new_baseline or options.reset_results):
         warnings.append("--ignore-metrics has no effect with --new-baselines or with --reset-results")
+
+    if options.new_baseline:
+        options.reset_results = True
+        options.add_platform_exceptions = True
 
     return warnings
 
@@ -252,7 +251,7 @@ def parse_args(args=None):
         optparse.make_option("-l", "--leaks", action="store_true", default=False,
             help="Enable leaks checking (Mac OS X only)"),
         optparse.make_option("-g", "--guard-malloc", action="store_true", default=False,
-            help="Enable malloc guard (Mac OS X only)"),
+            help="Enable Guard Malloc (Mac OS X only)"),
         optparse.make_option("--threaded", action="store_true", default=False,
             help="Run a concurrent JavaScript thread with each test"),
         optparse.make_option("--webkit-test-runner", "-2", action="store_true",
@@ -282,10 +281,12 @@ def parse_args(args=None):
         optparse.make_option("--results-directory", help="Location of test results"),
         optparse.make_option("--build-directory",
             help="Path to the directory under which build files are kept (should not include configuration)"),
+        optparse.make_option("--add-platform-exceptions", action="store_true", default=False,
+            help="Save generated results into the *most-specific-platform* directory rather than the *generic-platform* directory"),
         optparse.make_option("--new-baseline", action="store_true",
             default=False, help="Save generated results as new baselines "
-                 "into the *platform* directory, overwriting whatever's "
-                 "already there."),
+                 "into the *most-specific-platform* directory, overwriting whatever's "
+                 "already there. Equivalent to --reset-results --add-platform-exceptions"),
         optparse.make_option("--reset-results", action="store_true",
             default=False, help="Reset expectations to the "
                  "generated results in their existing location."),
@@ -302,6 +303,8 @@ def parse_args(args=None):
         optparse.make_option("--additional-drt-flag", action="append",
             default=[], help="Additional command line flag to pass to DumpRenderTree "
                  "Specify multiple times to add multiple flags."),
+        optparse.make_option("--driver-name", type="string",
+            help="Alternative DumpRenderTree binary to use"),
         optparse.make_option("--additional-platform-directory", action="append",
             default=[], help="Additional directory where to look for test "
                  "baselines (will take precendence over platform baselines). "
@@ -350,17 +353,14 @@ def parse_args(args=None):
             help="wrapper command to insert before invocations of "
                  "DumpRenderTree; option is split on whitespace before "
                  "running. (Example: --wrapper='valgrind --smc-check=all')"),
-        # old-run-webkit-tests:
-        # -i|--ignore-tests               Comma-separated list of directories
-        #                                 or tests to ignore
         optparse.make_option("-i", "--ignore-tests", action="append", default=[],
             help="directories or test to ignore (may specify multiple times)"),
         optparse.make_option("--test-list", action="append",
             help="read list of tests to run from file", metavar="FILE"),
-        # old-run-webkit-tests uses --skipped==[default|ignore|only]
-        # instead of --force:
-        optparse.make_option("--force", action="store_true", default=False,
-            help="Run all tests, even those marked SKIP in the test list"),
+        optparse.make_option("--skipped", action="store", default="default",
+            help="control how tests marked SKIP are run. 'default' == Skip, 'ignore' == Run them anyway, 'only' == only run the SKIP tests."),
+        optparse.make_option("--force", dest="skipped", action="store_const", const='ignore',
+            help="Run all tests, even those marked SKIP in the test list (same as --skipped=ignore)"),
         optparse.make_option("--time-out-ms",
             help="Set the timeout for each test"),
         # old-run-webkit-tests calls --randomize-order --random:
@@ -386,11 +386,11 @@ def parse_args(args=None):
         # FIXME: Display default number of child processes that will run.
         optparse.make_option("-f", "--fully-parallel", action="store_true",
             help="run all tests in parallel"),
-        optparse.make_option("--exit-after-n-failures", type="int", default=500,
+        optparse.make_option("--exit-after-n-failures", type="int", default=None,
             help="Exit after the first N failures instead of running all "
             "tests"),
         optparse.make_option("--exit-after-n-crashes-or-timeouts", type="int",
-            default=20, help="Exit after the first N crashes instead of "
+            default=None, help="Exit after the first N crashes instead of "
             "running all tests"),
         optparse.make_option("--iterations", type="int", help="Number of times to run the set of tests (e.g. ABCABCABC)"),
         optparse.make_option("--repeat-each", type="int", help="Number of times to run each test (e.g. AAABBBCCC)"),
@@ -446,7 +446,6 @@ def main():
         host = MockHost()
     else:
         host = Host()
-    host._initialize_scm()
     port = host.port_factory.get(options.platform, options)
     logging.getLogger().setLevel(logging.DEBUG if options.verbose else logging.INFO)
     return run(port, options, args)

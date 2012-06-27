@@ -25,7 +25,7 @@ function prepareDatabase()
     debug("");
     debug("Creating empty stores and indexes");
     var trans = evalAndLog("trans = event.target.result");
-    shouldBeTrue("trans !== null");
+    shouldBeNonNull("trans");
     trans.onabort = unexpectedAbortCallback;
     trans.oncomplete = addData;
 
@@ -42,7 +42,7 @@ function addData()
 {
     debug("");
     debug("Populating stores (and indexes)");
-    transaction = evalAndLog("transaction = db.transaction(['store'], IDBTransaction.READ_WRITE)");
+    transaction = evalAndLog("transaction = db.transaction(['store'], 'readwrite')");
     transaction.onabort = unexpectedAbortCallback;
     transaction.oncomplete = function() { verifyIndexes('index', verifyUniqueConstraint); };
 
@@ -54,13 +54,17 @@ function addData()
     request.onerror = unexpectedErrorCallback;
     request = evalAndLog("transaction.objectStore('store').put({x: [4, 5, 6], y: 'b'}, 'bar')");
     request.onerror = unexpectedErrorCallback;
+    request = evalAndLog("transaction.objectStore('store').put({x: [7, 7, 8, 7], y: 'c'}, 'baz')");
+    request.onerror = unexpectedErrorCallback;
+    request = evalAndLog("transaction.objectStore('store').put({x: [null, 9, 9], y: 'd'}, 'bloop')");
+    request.onerror = unexpectedErrorCallback;
 }
 
 function verifyIndexes(indexName, callback)
 {
     debug("");
     debug("Verifying index: " + indexName);
-    transaction = evalAndLog("transaction = db.transaction(['store'], IDBTransaction.READ_ONLY)");
+    transaction = evalAndLog("transaction = db.transaction(['store'], 'readonly')");
     transaction.onabort = unexpectedAbortCallback;
     transaction.oncomplete = callback;
 
@@ -71,6 +75,9 @@ function verifyIndexes(indexName, callback)
         { key: 4, primaryKey: 'bar', y: 'b' },
         { key: 5, primaryKey: 'bar', y: 'b' },
         { key: 6, primaryKey: 'bar', y: 'b' },
+        { key: 7, primaryKey: 'baz', y: 'c' },
+        { key: 8, primaryKey: 'baz', y: 'c' },
+        { key: 9, primaryKey: 'bloop', y: 'd' },
     ];
 
     var request = evalAndLog("transaction.objectStore('store').index('" + indexName + "').openCursor()");
@@ -79,13 +86,13 @@ function verifyIndexes(indexName, callback)
         cursor = evalAndLog("cursor = event.target.result");
         if (cursor) {
             ex = expected.shift();
-            shouldBeTrue("ex != null");
+            shouldBeNonNull("ex");
             shouldBe("cursor.key", String(ex.key));
             shouldBeEqualToString("cursor.primaryKey", ex.primaryKey);
             shouldBeEqualToString("cursor.value.y", ex.y);
-            cursor.continue();
+            evalAndLog("cursor.continue()");
         } else {
-            shouldBeTrue("expected.length === 0");
+            shouldBe("expected.length", "0");
         }
     };
 }
@@ -94,7 +101,7 @@ function verifyUniqueConstraint()
 {
     debug("");
     debug("Verifying unique constraint on multiEntry index");
-    transaction = evalAndLog("transaction = db.transaction(['store-unique'], IDBTransaction.READ_WRITE)");
+    transaction = evalAndLog("transaction = db.transaction(['store-unique'], 'readwrite')");
     transaction.onabort = function () {
         debug("Transaction aborted as expected");
         createIndexOnStoreWithData();
@@ -113,7 +120,7 @@ function verifyUniqueConstraint()
             debug("This should fail the uniqueness constraint on the index, and fail:");
             request = evalAndLog("transaction.objectStore('store-unique').put({x: [5, 2], y: 'c'}, 'should fail')");
             request.onsuccess = unexpectedSuccessCallback;
-            request.onerror = function() { debug("Request failed, as expected"); };
+            request.onerror = function() { debug("Request failed, as expected (" + request.error.name + ")"); };
         };
     };
 }
@@ -128,7 +135,7 @@ function createIndexOnStoreWithData()
     request.onsuccess = function() {
 
         var trans = evalAndLog("trans = event.target.result");
-        shouldBeTrue("trans !== null");
+        shouldBeNonNull("trans");
         trans.onabort = unexpectedAbortCallback;
         trans.oncomplete = function() { verifyIndexes('index-new', finishJSTest); };
 

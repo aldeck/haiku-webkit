@@ -56,8 +56,6 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-static const int uninitializedLineNumberValue = -1;
-
 static TextPosition uninitializedPositionValue1()
 {
     return TextPosition(OrdinalNumber::fromOneBasedInt(-1), OrdinalNumber::first());
@@ -411,7 +409,7 @@ void HTMLTreeBuilder::detach()
 HTMLTreeBuilder::FragmentParsingContext::FragmentParsingContext()
     : m_fragment(0)
     , m_contextElement(0)
-    , m_scriptingPermission(FragmentScriptingAllowed)
+    , m_scriptingPermission(AllowScriptingContent)
 {
 }
 
@@ -2135,7 +2133,7 @@ void HTMLTreeBuilder::processEndTag(AtomicHTMLToken& token)
             m_scriptToProcess = m_tree.currentElement();
             m_scriptToProcessStartPosition = m_lastScriptElementStartPosition;
             m_tree.openElements()->pop();
-            if (isParsingFragment() && m_fragmentContext.scriptingPermission() == FragmentScriptingNotAllowed)
+            if (isParsingFragment() && m_fragmentContext.scriptingPermission() == DisallowScriptingContent)
                 m_scriptToProcess->removeAllChildren();
             setInsertionMode(m_originalInsertionMode);
 

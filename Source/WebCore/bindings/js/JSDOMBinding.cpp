@@ -22,6 +22,7 @@
 #include "JSDOMBinding.h"
 
 #include "DOMObjectHashTableMap.h"
+#include "DOMStringList.h"
 #include "ExceptionCode.h"
 #include "ExceptionHeaders.h"
 #include "ExceptionInterfaces.h"
@@ -49,7 +50,7 @@ const JSC::HashTable* getHashTableForGlobalData(JSGlobalData& globalData, const 
 JSValue jsStringSlowCase(ExecState* exec, JSStringCache& stringCache, StringImpl* stringImpl)
 {
     JSString* wrapper = jsString(exec, UString(stringImpl));
-    stringCache.add(stringImpl, PassWeak<JSString>(wrapper, currentWorld(exec)->stringWrapperOwner(), stringImpl));
+    weakAdd(stringCache, stringImpl, PassWeak<JSString>(wrapper, currentWorld(exec)->stringWrapperOwner(), stringImpl));
     return wrapper;
 }
 
@@ -107,11 +108,11 @@ JSValue jsStringOrFalse(ExecState* exec, const KURL& url)
     return jsString(exec, url.string());
 }
 
-AtomicStringImpl* findAtomicString(const Identifier& identifier)
+AtomicStringImpl* findAtomicString(PropertyName propertyName)
 {
-    if (identifier.isNull())
+    StringImpl* impl = propertyName.publicName();
+    if (!impl)
         return 0;
-    StringImpl* impl = identifier.impl();
     ASSERT(impl->existingHash());
     return AtomicString::find(impl->characters(), impl->length(), impl->existingHash());
 }
@@ -144,6 +145,16 @@ double valueToDate(ExecState* exec, JSValue value)
     if (!value.inherits(&DateInstance::s_info))
         return std::numeric_limits<double>::quiet_NaN();
     return static_cast<DateInstance*>(value.toObject(exec))->internalNumber();
+}
+
+JSC::JSValue jsArray(JSC::ExecState* exec, JSDOMGlobalObject* globalObject, PassRefPtr<DOMStringList> stringList)
+{
+    JSC::MarkedArgumentBuffer list;
+    if (stringList) {
+        for (unsigned i = 0; i < stringList->length(); ++i)
+            list.append(jsString(exec, stringList->item(i)));
+    }
+    return JSC::constructArray(exec, globalObject, list);
 }
 
 void reportException(ExecState* exec, JSValue exception)
@@ -243,9 +254,9 @@ void printErrorMessageForFrame(Frame* frame, const String& message)
     frame->domWindow()->printErrorMessage(message);
 }
 
-JSValue objectToStringFunctionGetter(ExecState* exec, JSValue, const Identifier& propertyName)
+JSValue objectToStringFunctionGetter(ExecState* exec, JSValue, PropertyName propertyName)
 {
-    return JSFunction::create(exec, exec->lexicalGlobalObject(), 0, propertyName, objectProtoFuncToString);
+    return JSFunction::create(exec, exec->lexicalGlobalObject(), 0, propertyName.publicName(), objectProtoFuncToString);
 }
 
 Structure* getCachedDOMStructure(JSDOMGlobalObject* globalObject, const ClassInfo* classInfo)

@@ -483,6 +483,12 @@ public:
         JumpLinkType m_linkType : 8;
         Condition m_condition : 16;
     };
+    
+    ARMv7Assembler()
+        : m_indexOfLastWatchpoint(INT_MIN)
+        , m_indexOfTailOfLastWatchpoint(INT_MIN)
+    {
+    }
 
 private:
 
@@ -1820,10 +1826,30 @@ public:
     {
         m_formatter.oneWordOp8Imm8(OP_NOP_T1, 0);
     }
+    
+    AssemblerLabel labelIgnoringWatchpoints()
+    {
+        return m_formatter.label();
+    }
+
+    AssemblerLabel labelForWatchpoint()
+    {
+        AssemblerLabel result = m_formatter.label();
+        if (static_cast<int>(result.m_offset) != m_indexOfLastWatchpoint)
+            result = label();
+        m_indexOfLastWatchpoint = result.m_offset;
+        m_indexOfTailOfLastWatchpoint = result.m_offset + maxJumpReplacementSize();
+        return result;
+    }
 
     AssemblerLabel label()
     {
-        return m_formatter.label();
+        AssemblerLabel result = m_formatter.label();
+        while (UNLIKELY(static_cast<int>(result.m_offset) < m_indexOfTailOfLastWatchpoint)) {
+            nop();
+            result = m_formatter.label();
+        }
+        return result;
     }
     
     AssemblerLabel align(int alignment)
@@ -2026,7 +2052,7 @@ public:
 
         linkJumpAbsolute(reinterpret_cast<uint16_t*>(from), to);
 
-        ExecutableAllocator::cacheFlush(reinterpret_cast<uint16_t*>(from) - 5, 5 * sizeof(uint16_t));
+        cacheFlush(reinterpret_cast<uint16_t*>(from) - 5, 5 * sizeof(uint16_t));
     }
     
     static void relinkCall(void* from, void* to)
@@ -2067,8 +2093,63 @@ public:
     {
         return reinterpret_cast<void*>(readInt32(where));
     }
+    
+    static void replaceWithJump(void* instructionStart, void* to)
+    {
+        ASSERT(!(bitwise_cast<uintptr_t>(instructionStart) & 1));
+        ASSERT(!(bitwise_cast<uintptr_t>(to) & 1));
+        uint16_t* ptr = reinterpret_cast<uint16_t*>(instructionStart) + 2;
+        
+        // Ensure that we're not in one of those errata-triggering thingies. If we are, then
+        // prepend a nop.
+        bool spansTwo4K = ((reinterpret_cast<intptr_t>(ptr) & 0xfff) == 0x002);
+        
+        if (spansTwo4K) {
+            ptr[-2] = OP_NOP_T1;
+            ptr++;
+        }
+
+        linkJumpT4(ptr, to);
+        cacheFlush(ptr - 2, sizeof(uint16_t) * 2);
+    }
+    
+    static ptrdiff_t maxJumpReplacementSize()
+    {
+        return 6;
+    }
 
     unsigned debugOffset() { return m_formatter.debugOffset(); }
+
+    static void cacheFlush(void* code, size_t size)
+    {
+#if OS(IOS)
+        sys_cache_control(kCacheFunctionPrepareForExecution, code, size);
+#elif OS(LINUX)
+        asm volatile(
+            "push    {r7}\n"
+            "mov     r0, %0\n"
+            "mov     r1, %1\n"
+            "movw    r7, #0x2\n"
+            "movt    r7, #0xf\n"
+            "movs    r2, #0x0\n"
+            "svc     0x0\n"
+            "pop     {r7}\n"
+            :
+            : "r" (code), "r" (reinterpret_cast<char*>(code) + size)
+            : "r0", "r1", "r2");
+#elif OS(WINCE)
+        CacheRangeFlush(code, size, CACHE_SYNC_ALL);
+#elif OS(QNX)
+#if !ENABLE(ASSEMBLER_WX_EXCLUSIVE)
+        msync(code, size, MS_INVALIDATE_ICACHE);
+#else
+        UNUSED_PARAM(code);
+        UNUSED_PARAM(size);
+#endif
+#else
+#error "The cacheFlush support is missing on this platform."
+#endif
+    }
 
 private:
     // VFP operations commonly take one or more 5-bit operands, typically representing a
@@ -2149,7 +2230,7 @@ private:
         location[-2] = twoWordOp5i6Imm4Reg4EncodedImmFirst(OP_MOVT, hi16);
         location[-1] = twoWordOp5i6Imm4Reg4EncodedImmSecond((location[-1] >> 8) & 0xf, hi16);
 
-        ExecutableAllocator::cacheFlush(location - 4, 4 * sizeof(uint16_t));
+        cacheFlush(location - 4, 4 * sizeof(uint16_t));
     }
     
     static int32_t readInt32(void* code)
@@ -2177,7 +2258,7 @@ private:
         uint16_t* location = reinterpret_cast<uint16_t*>(code);
         location[0] &= ~((static_cast<uint16_t>(0x7f) >> 2) << 6);
         location[0] |= (imm.getUInt7() >> 2) << 6;
-        ExecutableAllocator::cacheFlush(location, sizeof(uint16_t));
+        cacheFlush(location, sizeof(uint16_t));
     }
 
     static void setPointer(void* code, void* value)
@@ -2573,6 +2654,8 @@ private:
 
     Vector<LinkRecord> m_jumpsToLink;
     Vector<int32_t> m_offsets;
+    int m_indexOfLastWatchpoint;
+    int m_indexOfTailOfLastWatchpoint;
 };
 
 } // namespace JSC

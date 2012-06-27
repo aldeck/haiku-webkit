@@ -25,7 +25,6 @@
 #include "CSSHelper.h"
 #include "CSSParser.h"
 #include "CSSPropertyNames.h"
-#include "CSSStyleSheet.h"
 #include "CSSValueKeywords.h"
 #include "CSSWrapShapes.h"
 #include "CalculationValue.h"
@@ -37,6 +36,7 @@
 #include "RGBColor.h"
 #include "Rect.h"
 #include "RenderStyle.h"
+#include "StyleSheetContents.h"
 #include <wtf/ASCIICType.h>
 #include <wtf/DecimalNumber.h>
 #include <wtf/StdLibExtras.h>
@@ -60,6 +60,11 @@ static inline bool isValidCSSUnitTypeForDoubleConversion(CSSPrimitiveValue::Unit
     case CSSPrimitiveValue:: CSS_CM:
     case CSSPrimitiveValue:: CSS_DEG:
     case CSSPrimitiveValue:: CSS_DIMENSION:
+#if ENABLE(CSS_IMAGE_RESOLUTION)
+    case CSSPrimitiveValue:: CSS_DPPX:
+    case CSSPrimitiveValue:: CSS_DPI:
+    case CSSPrimitiveValue:: CSS_DPCM:
+#endif
     case CSSPrimitiveValue:: CSS_EMS:
     case CSSPrimitiveValue:: CSS_EXS:
     case CSSPrimitiveValue:: CSS_GRAD:
@@ -85,6 +90,11 @@ static inline bool isValidCSSUnitTypeForDoubleConversion(CSSPrimitiveValue::Unit
     case CSSPrimitiveValue:: CSS_COUNTER:
     case CSSPrimitiveValue:: CSS_COUNTER_NAME:
     case CSSPrimitiveValue:: CSS_DASHBOARD_REGION:
+#if !ENABLE(CSS_IMAGE_RESOLUTION)
+    case CSSPrimitiveValue:: CSS_DPPX:
+    case CSSPrimitiveValue:: CSS_DPI:
+    case CSSPrimitiveValue:: CSS_DPCM:
+#endif
     case CSSPrimitiveValue:: CSS_IDENT:
     case CSSPrimitiveValue:: CSS_PAIR:
     case CSSPrimitiveValue:: CSS_PARSER_HEXCOLOR:
@@ -99,6 +109,9 @@ static inline bool isValidCSSUnitTypeForDoubleConversion(CSSPrimitiveValue::Unit
     case CSSPrimitiveValue:: CSS_UNICODE_RANGE:
     case CSSPrimitiveValue:: CSS_UNKNOWN:
     case CSSPrimitiveValue:: CSS_URI:
+#if ENABLE(CSS_VARIABLES)
+    case CSSPrimitiveValue:: CSS_VARIABLE_NAME:
+#endif
         return false;
     }
 
@@ -137,6 +150,12 @@ static CSSPrimitiveValue::UnitCategory unitCategory(CSSPrimitiveValue::UnitTypes
     case CSSPrimitiveValue::CSS_VH:
     case CSSPrimitiveValue::CSS_VMIN:
         return CSSPrimitiveValue::UViewportPercentageLength;
+#if ENABLE(CSS_IMAGE_RESOLUTION)
+    case CSSPrimitiveValue:: CSS_DPPX:
+    case CSSPrimitiveValue:: CSS_DPI:
+    case CSSPrimitiveValue:: CSS_DPCM:
+        return CSSPrimitiveValue::UResolution;
+#endif
     default:
         return CSSPrimitiveValue::UOther;
     }
@@ -170,6 +189,7 @@ unsigned short CSSPrimitiveValue::primitiveType() const
     }
     return CSSPrimitiveValue::CSS_UNKNOWN;
 }
+
 static const AtomicString& valueOrPropertyName(int valueOrPropertyID)
 {
     ASSERT_ARG(valueOrPropertyID, valueOrPropertyID >= 0);
@@ -247,6 +267,22 @@ CSSPrimitiveValue::CSSPrimitiveValue(const Length& length)
         case MinIntrinsic:
             m_primitiveUnitType = CSS_IDENT;
             m_value.ident = CSSValueMinIntrinsic;
+            break;
+        case MinContent:
+            m_primitiveUnitType = CSS_IDENT;
+            m_value.ident = CSSValueWebkitMinContent;
+            break;
+        case MaxContent:
+            m_primitiveUnitType = CSS_IDENT;
+            m_value.ident = CSSValueWebkitMaxContent;
+            break;
+        case FillAvailable:
+            m_primitiveUnitType = CSS_IDENT;
+            m_value.ident = CSSValueWebkitFillAvailable;
+            break;
+        case FitContent:
+            m_primitiveUnitType = CSS_IDENT;
+            m_value.ident = CSSValueWebkitFitContent;
             break;
         case Percent:
             m_primitiveUnitType = CSS_PERCENTAGE;
@@ -431,7 +467,11 @@ template<> unsigned CSSPrimitiveValue::computeLength(RenderStyle* style, RenderS
 
 template<> Length CSSPrimitiveValue::computeLength(RenderStyle* style, RenderStyle* rootStyle, float multiplier, bool computingFontSize)
 {
+#if ENABLE(SUBPIXEL_LAYOUT)
+    return Length(static_cast<float>(computeLengthDouble(style, rootStyle, multiplier, computingFontSize)), Fixed);
+#else
     return Length(roundForImpreciseConversion<float>(computeLengthDouble(style, rootStyle, multiplier, computingFontSize)), Fixed);
+#endif
 }
 
 template<> short CSSPrimitiveValue::computeLength(RenderStyle* style, RenderStyle* rootStyle, float multiplier, bool computingFontSize)
@@ -547,11 +587,17 @@ static double conversionToCanonicalUnitsScaleFactor(unsigned short unitType)
         case CSSPrimitiveValue::CSS_CM:
             factor = cssPixelsPerInch / 2.54; // (2.54 cm/in)
             break;
+        case CSSPrimitiveValue::CSS_DPCM:
+            factor = 2.54 / cssPixelsPerInch; // (2.54 cm/in)
+            break;
         case CSSPrimitiveValue::CSS_MM:
             factor = cssPixelsPerInch / 25.4;
             break;
         case CSSPrimitiveValue::CSS_IN:
             factor = cssPixelsPerInch;
+            break;
+        case CSSPrimitiveValue::CSS_DPI:
+            factor = 1 / cssPixelsPerInch;
             break;
         case CSSPrimitiveValue::CSS_PT:
             factor = cssPixelsPerInch / 72.0;
@@ -623,6 +669,10 @@ CSSPrimitiveValue::UnitTypes CSSPrimitiveValue::canonicalUnitTypeForCategory(Uni
         return CSS_HZ;
     case UViewportPercentageLength:
         return CSS_UNKNOWN; // Cannot convert between numbers and relative lengths.
+#if ENABLE(CSS_IMAGE_RESOLUTION)
+    case UResolution:
+        return CSS_DPPX;
+#endif
     default:
         return CSS_UNKNOWN;
     }
@@ -693,6 +743,9 @@ String CSSPrimitiveValue::getStringValue(ExceptionCode& ec) const
         case CSS_STRING:
         case CSS_ATTR:
         case CSS_URI:
+#if ENABLE(CSS_VARIABLES)
+        case CSS_VARIABLE_NAME:
+#endif
             return m_value.string;
         case CSS_IDENT:
             return valueOrPropertyName(m_value.ident);
@@ -710,7 +763,10 @@ String CSSPrimitiveValue::getStringValue() const
         case CSS_STRING:
         case CSS_ATTR:
         case CSS_URI:
-             return m_value.string;
+#if ENABLE(CSS_VARIABLES)
+        case CSS_VARIABLE_NAME:
+#endif
+            return m_value.string;
         case CSS_IDENT:
             return valueOrPropertyName(m_value.ident);
         default:
@@ -824,6 +880,17 @@ String CSSPrimitiveValue::customCssText() const
         case CSS_CM:
             text = formatNumber(m_value.num) + "cm";
             break;
+#if ENABLE(CSS_IMAGE_RESOLUTION)
+        case CSS_DPPX:
+            text = formatNumber(m_value.num) + "dppx";
+            break;
+        case CSS_DPI:
+            text = formatNumber(m_value.num) + "dpi";
+            break;
+        case CSS_DPCM:
+            text = formatNumber(m_value.num) + "dpcm";
+            break;
+#endif
         case CSS_MM:
             text = formatNumber(m_value.num) + "mm";
             break;
@@ -1052,6 +1119,13 @@ String CSSPrimitiveValue::customCssText() const
         case CSS_VMIN:
             text = formatNumber(m_value.num) + "vmin";
             break;
+#if ENABLE(CSS_VARIABLES)
+        case CSS_VARIABLE_NAME:
+            text = "-webkit-var(";
+            text += m_value.string;
+            text += ")";
+            break;
+#endif
     }
 
     ASSERT(!cssTextCache().contains(this));
@@ -1060,7 +1134,16 @@ String CSSPrimitiveValue::customCssText() const
     return text;
 }
 
-void CSSPrimitiveValue::addSubresourceStyleURLs(ListHashSet<KURL>& urls, const StyleSheetInternal* styleSheet)
+#if ENABLE(CSS_VARIABLES)
+String CSSPrimitiveValue::customSerializeResolvingVariables(const HashMap<AtomicString, String>& variables) const
+{
+    if (m_primitiveUnitType == CSS_VARIABLE_NAME && variables.contains(m_value.string))
+        return variables.get(m_value.string);
+    return customCssText();
+}
+#endif
+
+void CSSPrimitiveValue::addSubresourceStyleURLs(ListHashSet<KURL>& urls, const StyleSheetContents* styleSheet) const
 {
     if (m_primitiveUnitType == CSS_URI)
         addSubresourceURL(urls, styleSheet->completeURL(m_value.string));
@@ -1147,6 +1230,11 @@ PassRefPtr<CSSPrimitiveValue> CSSPrimitiveValue::cloneForCSSOM() const
     case CSS_VW:
     case CSS_VH:
     case CSS_VMIN:
+#if ENABLE(CSS_IMAGE_RESOLUTION)
+    case CSS_DPPX:
+    case CSS_DPI:
+    case CSS_DPCM:
+#endif
         result = CSSPrimitiveValue::create(m_value.num, static_cast<UnitTypes>(m_primitiveUnitType));
         break;
     case CSS_IDENT:

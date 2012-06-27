@@ -31,17 +31,24 @@ ui.failures = ui.failures || {};
 var kBuildingResult = 'BUILDING';
 
 ui.failures.Builder = base.extends('a', {
-    init: function(builderName)
+    init: function(builderName, failures)
     {
-        var configuration = config.kBuilders[builderName];
-        if (configuration.version)
-            this._addSpan('version', configuration.version);
-        if (configuration.is64bit)
-            this._addSpan('architecture', '64-bit');
-        this._configuration = configuration;
+        var platformBuilders = config.kPlatforms[config.currentPlatform].builders;
+        var configuration = platformBuilders[builderName];
+        if (configuration) {
+            if (configuration.version)
+                this._addSpan('version', configuration.version);
+            if (configuration.is64bit)
+                this._addSpan('architecture', '64-bit');
+            this._configuration = configuration;
+        } else
+            this._addSpan('version', builderName);
+
         this.className = 'failing-builder';
         this.target = '_blank';
         this.href = ui.displayURLForBuilder(builderName);
+        if (failures)
+            this._addSpan('failures', ' ' + failures.join(', '));
     },
     _addSpan: function(className, text)
     {
@@ -51,7 +58,7 @@ ui.failures.Builder = base.extends('a', {
     },
     equals: function(configuration)
     {
-        return this._configuration.is64bit == configuration.is64bit && this._configuration.version == configuration.version; 
+        return this._configuration && this._configuration.is64bit == configuration.is64bit && this._configuration.version == configuration.version; 
     }
 });
 
@@ -102,7 +109,7 @@ ui.failures.FailureGrid = base.extends('table', {
             return;
 
         Object.keys(resultsByBuilder).forEach(function(builderName) {
-            var configuration = config.kBuilders[builderName];
+            var configuration = config.kPlatforms[config.currentPlatform].builders[builderName];
             if (!configuration)
                 throw "Unknown builder name: " + builderName;
             var row = this._rowByResult(resultsByBuilder[builderName].actual);

@@ -846,24 +846,6 @@ void LayoutTestController::setSmartInsertDeleteEnabled(bool flag)
     viewEditing->setSmartInsertDeleteEnabled(flag ? TRUE : FALSE);
 }
 
-void LayoutTestController::setJavaScriptProfilingEnabled(bool flag)
-{
-    COMPtr<IWebView> webView;
-    if (FAILED(frame->webView(&webView)))
-        return;
-
-    COMPtr<IWebViewPrivate> viewPrivate;
-    if (FAILED(webView->QueryInterface(&viewPrivate)))
-        return;
-
-    COMPtr<IWebInspector> inspector;
-    if (FAILED(viewPrivate->inspector(&inspector)))
-        return;
-
-    setDeveloperExtrasEnabled(flag);
-    inspector->setJavaScriptProfilingEnabled(flag);
-}
-
 void LayoutTestController::setSelectTrailingWhitespaceEnabled(bool flag)
 {
     COMPtr<IWebView> webView;
@@ -1122,24 +1104,6 @@ unsigned LayoutTestController::numberOfActiveAnimations() const
     return number;
 }
 
-void LayoutTestController::suspendAnimations() const
-{
-    COMPtr<IWebFramePrivate> framePrivate(Query, frame);
-    if (!framePrivate)
-        return;
-
-    framePrivate->suspendAnimations();
-}
-
-void LayoutTestController::resumeAnimations() const
-{
-    COMPtr<IWebFramePrivate> framePrivate(Query, frame);
-    if (!framePrivate)
-        return;
-
-    framePrivate->resumeAnimations();
-}
-
 static _bstr_t bstrT(JSStringRef jsString)
 {
     // The false parameter tells the _bstr_t constructor to adopt the BSTR we pass it.
@@ -1336,25 +1300,6 @@ void LayoutTestController::removeAllVisitedLinks()
     sharedHistoryPrivate->removeAllVisitedLinks();
 }
 
-JSRetainPtr<JSStringRef> LayoutTestController::counterValueForElementById(JSStringRef id)
-{
-    COMPtr<IWebFramePrivate> framePrivate(Query, frame);
-    if (!framePrivate)
-        return 0;
-
-    wstring idWstring = jsStringRefToWString(id);
-    BSTR idBSTR = SysAllocStringLen((OLECHAR*)idWstring.c_str(), idWstring.length());
-    BSTR counterValueBSTR;
-    if (FAILED(framePrivate->counterValueForElementById(idBSTR, &counterValueBSTR)))
-        return 0;
-
-    wstring counterValue(counterValueBSTR, SysStringLen(counterValueBSTR));
-    SysFreeString(idBSTR);
-    SysFreeString(counterValueBSTR);
-    JSRetainPtr<JSStringRef> counterValueJS(Adopt, JSStringCreateWithCharacters(counterValue.data(), counterValue.length()));
-    return counterValueJS;
-}
-
 int LayoutTestController::pageNumberForElementById(JSStringRef id, float pageWidthInPixels, float pageHeightInPixels)
 {
     COMPtr<IWebFramePrivate> framePrivate(Query, frame);
@@ -1393,12 +1338,6 @@ void LayoutTestController::apiTestNewWindowDataLoadBaseURL(JSStringRef utf8Data,
 
 }
 
-bool LayoutTestController::isPageBoxVisible(int pageNumber) const
-{
-    // FIXME: implement
-    return false;
-}
-
 JSRetainPtr<JSStringRef> LayoutTestController::pageSizeAndMarginsInPixels(int pageNumber, int width, int height, int marginTop, int marginRight, int marginBottom, int marginLeft) const
 {
     // FIXME: implement
@@ -1429,25 +1368,6 @@ void LayoutTestController::setWebViewEditable(bool)
 
 void LayoutTestController::authenticateSession(JSStringRef, JSStringRef, JSStringRef)
 {
-}
-
-void LayoutTestController::setEditingBehavior(const char* editingBehavior)
-{
-    COMPtr<IWebView> webView;
-    if (FAILED(frame->webView(&webView)))
-        return;
-
-    COMPtr<IWebPreferences> preferences;
-    if (FAILED(webView->preferences(&preferences)))
-        return;
-
-    string behaviorString(editingBehavior);
-    if (behaviorString == "mac")
-        preferences->setEditingBehavior(WebKitEditingMacBehavior);
-    else if (behaviorString == "win")
-        preferences->setEditingBehavior(WebKitEditingWinBehavior);
-    else if (behaviorString == "unix")
-        preferences->setEditingBehavior(WebKitEditingUnixBehavior);
 }
 
 void LayoutTestController::abortModal()
@@ -1518,10 +1438,6 @@ void LayoutTestController::setTextDirection(JSStringRef direction)
     framePrivate->setTextDirection(bstrT(direction).GetBSTR());
 }
 
-void LayoutTestController::allowRoundingHacks()
-{
-}
-
 void LayoutTestController::addChromeInputField()
 {
 }
@@ -1541,4 +1457,29 @@ void LayoutTestController::setBackingScaleFactor(double)
 void LayoutTestController::simulateDesktopNotificationClick(JSStringRef title)
 {
     // FIXME: Implement.
+}
+
+void LayoutTestController::resetPageVisibility()
+{
+    // FIXME: Implement this.
+}
+
+void LayoutTestController::setPageVisibility(const char*)
+{
+    // FIXME: Implement this.
+}
+
+void LayoutTestController::setAutomaticLinkDetectionEnabled(bool)
+{
+    // FIXME: Implement this.
+}
+
+void LayoutTestController::sendWebIntentResponse(JSStringRef)
+{
+    // FIXME: Implement this.
+}
+
+void LayoutTestController::deliverWebIntent(JSStringRef, JSStringRef, JSStringRef)
+{
+    // FIXME: Implement this.
 }

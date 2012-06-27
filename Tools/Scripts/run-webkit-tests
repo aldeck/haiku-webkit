@@ -51,7 +51,7 @@ sub runningOnBuildBot()
     # This is a hack to detect if we're running on the buildbot so we can
     # pass --verbose to new-run-webkit-tests.  This will be removed when we
     # update the buildbot config to call new-run-webkit-tests explicitly.
-    my %isBuildBotUser = ("apple" => 1, "buildbot" => 1, "webkitbuildbot" => 1, "slave" => 1);
+    my %isBuildBotUser = ("apple" => 1, "buildbot" => 1, "webkitbuildbot" => 1, "slave" => 1, "buildslave-1" => 1, "chrome-bot" => 1);
     return $isBuildBotUser{$ENV{"USER"}};
 }
 
@@ -114,6 +114,8 @@ if (isQt()) {
     push(@ARGV, "--efl");
 } elsif (isChromium()) {
     push(@ARGV, "--chromium")
+} elsif (isWinCairo()) {
+    push(@ARGV, "--wincairo")
 }
 
 my $harnessPath = File::Spec->catfile(relativeScriptsDir(), $harnessName);

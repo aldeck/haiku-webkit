@@ -29,27 +29,27 @@
 """Checks WebKit style for test_expectations files."""
 
 import logging
+import optparse
 import os
 import re
 import sys
 
 from common import TabChecker
 from webkitpy.common.host import Host
-from webkitpy.layout_tests.models import test_expectations
-from webkitpy.layout_tests.port.base import DummyOptions
+from webkitpy.layout_tests.models.test_expectations import TestExpectationParser
 
 
 _log = logging.getLogger(__name__)
 
 
 class TestExpectationsChecker(object):
-    """Processes test_expectations.txt lines for validating the syntax."""
+    """Processes TestExpectations lines for validating the syntax."""
 
     categories = set(['test/expectations'])
 
     def _determine_port_from_expectations_path(self, host, expectations_path):
         # Pass a configuration to avoid calling default_configuration() when initializing the port (takes 0.5 seconds on a Mac Pro!).
-        options = DummyOptions(configuration='Release')
+        options = optparse.Values({'configuration': 'Release'})
         for port_name in host.port_factory.all_port_names():
             port = host.port_factory.get(port_name, options=options)
             if port.path_to_test_expectations_file().replace(port.path_from_webkit_base() + host.filesystem.sep, '') == expectations_path:
@@ -61,7 +61,6 @@ class TestExpectationsChecker(object):
         self._handle_style_error = handle_style_error
         self._handle_style_error.turn_off_line_filtering()
         self._tab_checker = TabChecker(file_path, handle_style_error)
-        self._output_regex = re.compile('.*test_expectations.txt:(?P<line>\d+)\s*(?P<message>.+)')
 
         # FIXME: host should be a required parameter, not an optional one.
         host = host or Host()
@@ -77,24 +76,17 @@ class TestExpectationsChecker(object):
         pass
 
     def check_test_expectations(self, expectations_str, tests=None, overrides=None):
-        err = None
-        expectations = None
-        try:
-            expectations = test_expectations.TestExpectations(
-                port=self._port_obj, expectations=expectations_str, tests=tests,
-                test_config=self._port_obj.test_configuration(),
-                is_lint_mode=True, overrides=overrides)
-        except test_expectations.ParseError, error:
-            err = error
+        # FIXME: we should pass in the filenames here if possible, and ensure
+        # that this works with with cascading expectations files and remove the overrides param.
+        parser = TestExpectationParser(self._port_obj, tests, False)
+        expectations = parser.parse('expectations', expectations_str)
+        if overrides:
+            expectations += parser.parse('overrides', overrides)
 
-        if err:
-            level = 5
-            for warning in err.warnings:
-                matched = self._output_regex.match(warning)
-                if matched:
-                    lineno, message = matched.group('line', 'message')
-                    self._handle_style_error(int(lineno), 'test/expectations', level, message)
-
+        level = 5
+        for expectation_line in expectations:
+            for warning in expectation_line.warnings:
+                self._handle_style_error(expectation_line.line_number, 'test/expectations', level, warning)
 
     def check_tabs(self, lines):
         self._tab_checker.check(lines)

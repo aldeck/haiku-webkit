@@ -60,6 +60,8 @@ void WebPageCreationParameters::encode(CoreIPC::ArgumentEncoder* encoder) const
 
 #if PLATFORM(MAC)
     encoder->encode(isSmartInsertDeleteEnabled);
+    encoder->encodeEnum(layerHostingMode);
+    encoder->encode(colorSpace);
 #endif
 
 #if PLATFORM(WIN)
@@ -120,6 +122,10 @@ bool WebPageCreationParameters::decode(CoreIPC::ArgumentDecoder* decoder, WebPag
 
 #if PLATFORM(MAC)
     if (!decoder->decode(parameters.isSmartInsertDeleteEnabled))
+        return false;
+    if (!decoder->decodeEnum(parameters.layerHostingMode))
+        return false;
+    if (!decoder->decode(parameters.colorSpace))
         return false;
 #endif
 

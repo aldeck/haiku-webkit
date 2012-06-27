@@ -19,10 +19,12 @@
 #include "config.h"
 #include "WebSettings.h"
 
+#include "MIMETypeRegistry.h"
 #include "WebSettings_p.h"
 
 #include "WebString.h"
 #include <Base64.h>
+#include <BlackBerryPlatformFontInfo.h>
 #include <Color.h>
 #include <PageCache.h>
 #include <wtf/HashSet.h>
@@ -43,6 +45,7 @@ DEFINE_STATIC_LOCAL(String, BlackBerryInitialScale, ("BlackBerryInitialScale"));
 DEFINE_STATIC_LOCAL(String, BlackBerryLinksHandledExternallyEnabled, ("BlackBerryLinksHandledExternallyEnabled"));
 DEFINE_STATIC_LOCAL(String, BlackBerryMaxPluginInstances, ("BlackBerryMaxPluginInstances"));
 DEFINE_STATIC_LOCAL(String, BlackBerryOverZoomColor, ("BlackBerryOverZoomColor"));
+DEFINE_STATIC_LOCAL(String, BlackBerryOverScrollImagePath, ("BlackBerryOverScrollImagePath"));
 DEFINE_STATIC_LOCAL(String, BlackBerryRenderAnimationsOnScrollOrZoomEnabled, ("BlackBerryRenderAnimationsOnScrollOrZoomEnabled"));
 DEFINE_STATIC_LOCAL(String, BlackBerryScrollbarsEnabled, ("BlackBerryScrollbarsEnabled"));
 DEFINE_STATIC_LOCAL(String, BlackBerryTextReflowMode, ("BlackBerryTextReflowMode"));
@@ -52,6 +55,9 @@ DEFINE_STATIC_LOCAL(String, BlackBerryUserAgentString, ("BlackBerryUserAgentStri
 DEFINE_STATIC_LOCAL(String, BlackBerryUserScalableEnabled, ("BlackBerryUserScalableEnabled"));
 DEFINE_STATIC_LOCAL(String, BlackBerryViewportWidth, ("BlackBerryViewportWidth"));
 DEFINE_STATIC_LOCAL(String, BlackBerryZoomToFitOnLoadEnabled, ("BlackBerryZoomToFitOnLoadEnabled"));
+DEFINE_STATIC_LOCAL(String, BlackBerryFullScreenVideoCapable, ("BlackBerryFullScreenVideoCapable"));
+DEFINE_STATIC_LOCAL(String, BlackBerryCredentialAutofillEnabled, ("BlackBerryCredentialAutofillEnabled"));
+DEFINE_STATIC_LOCAL(String, BlackBerryFormAutofillEnabled, ("BlackBerryFormAutofillEnabled"));
 DEFINE_STATIC_LOCAL(String, SpatialNavigationEnabled, ("SpatialNavigationEnabled"));
 DEFINE_STATIC_LOCAL(String, WebKitDatabasePath, ("WebKitDatabasePath"));
 DEFINE_STATIC_LOCAL(String, WebKitDatabasesEnabled, ("WebKitDatabasesEnabled"));
@@ -63,6 +69,7 @@ DEFINE_STATIC_LOCAL(String, WebKitFirstScheduledLayoutDelay, ("WebKitFirstSchedu
 DEFINE_STATIC_LOCAL(String, WebKitFixedFontFamily, ("WebKitFixedFontFamily"));
 DEFINE_STATIC_LOCAL(String, WebKitFrameFlatteningEnabled, ("WebKitFrameFlatteningEnabled"));
 DEFINE_STATIC_LOCAL(String, WebKitGeolocationEnabled, ("WebKitGeolocationEnabled"));
+DEFINE_STATIC_LOCAL(String, WebKitIndexedDataBasePath, ("WebKitIndexedDataBasePath"));
 DEFINE_STATIC_LOCAL(String, WebKitJavaScriptCanOpenWindowsAutomaticallyEnabled, ("WebKitJavaScriptCanOpenWindowsAutomaticallyEnabled"));
 DEFINE_STATIC_LOCAL(String, WebKitJavaScriptEnabled, ("WebKitJavaScriptEnabled"));
 DEFINE_STATIC_LOCAL(String, WebKitLoadsImagesAutomatically, ("WebKitLoadsImagesAutomatically"));
@@ -76,6 +83,7 @@ DEFINE_STATIC_LOCAL(String, WebKitOfflineWebApplicationCachePath, ("WebKitOfflin
 DEFINE_STATIC_LOCAL(String, WebKitPageGroupName, ("WebKitPageGroupName"));
 DEFINE_STATIC_LOCAL(String, WebKitPluginsEnabled, ("WebKitPluginsEnabled"));
 DEFINE_STATIC_LOCAL(String, WebKitPrivateBrowsingEnabled, ("WebKitPrivateBrowsingEnabled"));
+DEFINE_STATIC_LOCAL(String, WebKitDeviceSupportsMouse, ("WebKitDeviceSupportsMouse"));
 DEFINE_STATIC_LOCAL(String, WebKitSansSeriffFontFamily, ("WebKitSansSeriffFontFamily"));
 DEFINE_STATIC_LOCAL(String, WebKitSeriffFontFamily, ("WebKitSeriffFontFamily"));
 DEFINE_STATIC_LOCAL(String, WebKitStandardFontFamily, ("WebKitStandardFontFamily"));
@@ -83,65 +91,6 @@ DEFINE_STATIC_LOCAL(String, WebKitUserStyleSheet, ("WebKitUserStyleSheet"));
 DEFINE_STATIC_LOCAL(String, WebKitUserStyleSheetLocation, ("WebKitUserStyleSheetLocation"));
 DEFINE_STATIC_LOCAL(String, WebKitWebSocketsEnabled, ("WebKitWebSocketsEnabled"));
 DEFINE_STATIC_LOCAL(String, WebKitXSSAuditorEnabled, ("WebKitXSSAuditorEnabled"));
-
-// FIXME: We should consider moving all the mime type code into its own object.
-
-typedef HashMap<String, WebString> MIMETypeAssociationMap;
-
-static const MIMETypeAssociationMap& mimeTypeAssociationMap()
-{
-    static MIMETypeAssociationMap* mimeTypeMap = 0;
-    if (mimeTypeMap)
-        return *mimeTypeMap;
-
-    mimeTypeMap = new MIMETypeAssociationMap;
-    mimeTypeMap->add("image/x-ms-bmp", "image/bmp");
-    mimeTypeMap->add("image/x-windows-bmp", "image/bmp");
-    mimeTypeMap->add("image/x-bmp", "image/bmp");
-    mimeTypeMap->add("image/x-bitmap", "image/bmp");
-    mimeTypeMap->add("image/x-ms-bitmap", "image/bmp");
-    mimeTypeMap->add("image/jpg", "image/jpeg");
-    mimeTypeMap->add("image/pjpeg", "image/jpeg");
-    mimeTypeMap->add("image/x-png", "image/png");
-    mimeTypeMap->add("image/vnd.rim.png", "image/png");
-    mimeTypeMap->add("image/ico", "image/vnd.microsoft.icon");
-    mimeTypeMap->add("image/icon", "image/vnd.microsoft.icon");
-    mimeTypeMap->add("text/ico", "image/vnd.microsoft.icon");
-    mimeTypeMap->add("application/ico", "image/vnd.microsoft.icon");
-    mimeTypeMap->add("image/x-icon", "image/vnd.microsoft.icon");
-    mimeTypeMap->add("audio/vnd.qcelp", "audio/qcelp");
-    mimeTypeMap->add("audio/qcp", "audio/qcelp");
-    mimeTypeMap->add("audio/vnd.qcp", "audio/qcelp");
-    mimeTypeMap->add("audio/wav", "audio/x-wav");
-    mimeTypeMap->add("audio/mid", "audio/midi");
-    mimeTypeMap->add("audio/sp-midi", "audio/midi");
-    mimeTypeMap->add("audio/x-mid", "audio/midi");
-    mimeTypeMap->add("audio/x-midi", "audio/midi");
-    mimeTypeMap->add("audio/x-mpeg", "audio/mpeg");
-    mimeTypeMap->add("audio/mp3", "audio/mpeg");
-    mimeTypeMap->add("audio/x-mp3", "audio/mpeg");
-    mimeTypeMap->add("audio/mpeg3", "audio/mpeg");
-    mimeTypeMap->add("audio/x-mpeg3", "audio/mpeg");
-    mimeTypeMap->add("audio/mpg3", "audio/mpeg");
-    mimeTypeMap->add("audio/mpg", "audio/mpeg");
-    mimeTypeMap->add("audio/x-mpg", "audio/mpeg");
-    mimeTypeMap->add("audio/m4a", "audio/mp4");
-    mimeTypeMap->add("audio/x-m4a", "audio/mp4");
-    mimeTypeMap->add("audio/x-mp4", "audio/mp4");
-    mimeTypeMap->add("audio/x-aac", "audio/aac");
-    mimeTypeMap->add("audio/x-amr", "audio/amr");
-    mimeTypeMap->add("audio/mpegurl", "audio/x-mpegurl");
-    mimeTypeMap->add("audio/flac", "audio/x-flac");
-    mimeTypeMap->add("video/3gp", "video/3gpp");
-    mimeTypeMap->add("video/avi", "video/x-msvideo");
-    mimeTypeMap->add("video/x-m4v", "video/mp4");
-    mimeTypeMap->add("video/x-quicktime", "video/quicktime");
-    mimeTypeMap->add("application/java", "application/java-archive");
-    mimeTypeMap->add("application/x-java-archive", "application/java-archive");
-    mimeTypeMap->add("application/x-zip-compressed", "application/zip");
-
-    return *mimeTypeMap;
-}
 
 static HashSet<String>* s_supportedObjectMIMETypes;
 
@@ -210,6 +159,7 @@ WebSettings* WebSettings::standardSettings()
     settings->m_private->setDouble(BlackBerryInitialScale, -1);
     settings->m_private->setUnsigned(BlackBerryMaxPluginInstances, 1);
     settings->m_private->setUnsigned(BlackBerryOverZoomColor, WebCore::Color::white);
+    settings->m_private->setString(BlackBerryOverScrollImagePath, "");
     settings->m_private->setBoolean(BlackBerryScrollbarsEnabled, true);
 
     // FIXME: We should detect whether we are embedded in a browser or an email client and default to TextReflowEnabledOnlyForBlockZoom and TextReflowEnabled, respectively.
@@ -218,22 +168,26 @@ WebSettings* WebSettings::standardSettings()
     settings->m_private->setBoolean(BlackBerryUseWebKitCache, true);
     settings->m_private->setBoolean(BlackBerryUserScalableEnabled, true);
     settings->m_private->setBoolean(BlackBerryZoomToFitOnLoadEnabled, true);
+    settings->m_private->setBoolean(BlackBerryFullScreenVideoCapable, false);
+    settings->m_private->setBoolean(BlackBerryCredentialAutofillEnabled, false);
+    settings->m_private->setBoolean(BlackBerryFormAutofillEnabled, false);
 
     settings->m_private->setInteger(WebKitDefaultFontSize, 16);
     settings->m_private->setInteger(WebKitDefaultFixedFontSize, 13);
     settings->m_private->setString(WebKitDefaultTextEncodingName, "iso-8859-1");
     settings->m_private->setBoolean(WebKitDownloadableBinaryFontsEnabled, true);
     settings->m_private->setInteger(WebKitFirstScheduledLayoutDelay, 250); // Match Document::cLayoutScheduleThreshold.
-    settings->m_private->setString(WebKitFixedFontFamily, "Courier New");
     settings->m_private->setBoolean(WebKitJavaScriptEnabled, true);
     settings->m_private->setBoolean(WebKitLoadsImagesAutomatically, true);
     settings->m_private->setUnsignedLongLong(WebKitLocalStorageQuota, 5 * 1024 * 1024);
     settings->m_private->setInteger(WebKitMaximumPagesInCache, 0);
     settings->m_private->setInteger(WebKitMinimumFontSize, 8);
-    settings->m_private->setString(WebKitSansSeriffFontFamily, "Arial");
-    settings->m_private->setString(WebKitSeriffFontFamily, "Times New Roman");
-    settings->m_private->setString(WebKitStandardFontFamily, "Times New Roman");
     settings->m_private->setBoolean(WebKitWebSocketsEnabled, true);
+
+    settings->m_private->setString(WebKitFixedFontFamily, BlackBerry::Platform::fontFamily("-webkit-monospace", "").c_str());
+    settings->m_private->setString(WebKitSansSeriffFontFamily, BlackBerry::Platform::fontFamily("-webkit-sans-serif", "").c_str());
+    settings->m_private->setString(WebKitSeriffFontFamily, BlackBerry::Platform::fontFamily("-webkit-serif", "").c_str());
+    settings->m_private->setString(WebKitStandardFontFamily, BlackBerry::Platform::fontFamily("-webkit-standard", "").c_str());
 
     return settings;
 }
@@ -254,14 +208,7 @@ bool WebSettings::isSupportedObjectMIMEType(const WebString& mimeType)
     if (!s_supportedObjectMIMETypes)
         return false;
 
-    return s_supportedObjectMIMETypes->contains(getNormalizedMIMEType(mimeType));
-}
-
-WebString WebSettings::getNormalizedMIMEType(const WebString& type)
-{
-    MIMETypeAssociationMap::const_iterator i = mimeTypeAssociationMap().find(type);
-
-    return i == mimeTypeAssociationMap().end() ? type : i->second;
+    return s_supportedObjectMIMETypes->contains(MIMETypeRegistry::getNormalizedMIMEType(mimeType));
 }
 
 bool WebSettings::xssAuditorEnabled() const
@@ -322,6 +269,16 @@ bool WebSettings::isPrivateBrowsingEnabled() const
 void WebSettings::setPrivateBrowsingEnabled(bool enabled)
 {
     m_private->setBoolean(WebKitPrivateBrowsingEnabled, enabled);
+}
+
+bool WebSettings::deviceSupportsMouse() const
+{
+    return m_private->getBoolean(WebKitDeviceSupportsMouse);
+}
+
+void WebSettings::setDeviceSupportsMouse(bool enabled)
+{
+    m_private->setBoolean(WebKitDeviceSupportsMouse, enabled);
 }
 
 int WebSettings::defaultFixedFontSize() const
@@ -666,6 +623,16 @@ void WebSettings::setLocalStoragePath(const WebString& path)
     m_private->setString(WebKitLocalStoragePath, path);
 }
 
+WebString WebSettings::indexedDataBasePath() const
+{
+    return m_private->getString(WebKitIndexedDataBasePath);
+}
+
+void WebSettings::setIndexedDataBasePath(const WebString& path)
+{
+    m_private->setString(WebKitIndexedDataBasePath, path);
+}
+
 WebString WebSettings::databasePath() const
 {
     return m_private->getString(WebKitDatabasePath);
@@ -724,6 +691,16 @@ unsigned WebSettings::overZoomColor() const
 void WebSettings::setOverZoomColor(unsigned color)
 {
     m_private->setUnsigned(BlackBerryOverZoomColor, color);
+}
+
+WebString WebSettings::overScrollImagePath() const
+{
+    return m_private->getString(BlackBerryOverScrollImagePath);
+}
+
+void WebSettings::setOverScrollImagePath(const char* path)
+{
+    m_private->setString(BlackBerryOverScrollImagePath, path);
 }
 
 unsigned WebSettings::backgroundColor() const
@@ -804,6 +781,36 @@ bool WebSettings::isSpatialNavigationEnabled() const
 void WebSettings::setSpatialNavigationEnabled(bool enable)
 {
     m_private->setBoolean(SpatialNavigationEnabled, enable);
+}
+
+bool WebSettings::fullScreenVideoCapable() const
+{
+    return m_private->getBoolean(BlackBerryFullScreenVideoCapable);
+}
+
+void WebSettings::setFullScreenVideoCapable(bool enable)
+{
+    m_private->setBoolean(BlackBerryFullScreenVideoCapable, enable);
+}
+
+bool WebSettings::isCredentialAutofillEnabled() const
+{
+    return m_private->getBoolean(BlackBerryCredentialAutofillEnabled);
+}
+
+void WebSettings::setCredentialAutofillEnabled(bool enable)
+{
+    return m_private->setBoolean(BlackBerryCredentialAutofillEnabled, enable);
+}
+
+bool WebSettings::isFormAutofillEnabled() const
+{
+    return m_private->getBoolean(BlackBerryFormAutofillEnabled);
+}
+
+void WebSettings::setFormAutofillEnabled(bool enable)
+{
+    return m_private->setBoolean(BlackBerryFormAutofillEnabled, enable);
 }
 
 } // namespace WebKit

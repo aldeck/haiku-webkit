@@ -36,6 +36,7 @@
 #include "FrameLoader.h"
 #include "Geolocation.h"
 #include "GeolocationControllerClientBlackBerry.h"
+#include "GraphicsLayer.h"
 #include "HTMLInputElement.h"
 #include "HTMLNames.h"
 #include "HitTestResult.h"
@@ -47,6 +48,8 @@
 #include "Page.h"
 #include "PageGroup.h"
 #include "PageGroupLoadDeferrer.h"
+#include "PagePopupBlackBerry.h"
+#include "PagePopupClient.h"
 #include "PlatformString.h"
 #include "PopupMenuBlackBerry.h"
 #include "RenderView.h"
@@ -58,6 +61,7 @@
 #include "WebPage.h"
 #include "WebPageClient.h"
 #include "WebPage_p.h"
+#include "WebPopupType.h"
 #include "WebSettings.h"
 #include "WebString.h"
 #include "WindowFeatures.h"
@@ -144,6 +148,8 @@ bool ChromeClientBlackBerry::runJavaScriptPrompt(Frame* frame, const String& mes
 
 void ChromeClientBlackBerry::chromeDestroyed()
 {
+    // Destroy popup if we have.
+    closePagePopup(0);
     delete this;
 }
 
@@ -282,8 +288,7 @@ bool ChromeClientBlackBerry::selectItemAlignmentFollowsMenuWritingDirection()
 
 bool ChromeClientBlackBerry::hasOpenedPopup() const
 {
-    notImplemented();
-    return false;
+    return m_webPagePrivate->m_webPage->hasOpenedPopup();
 }
 
 PassRefPtr<PopupMenu> ChromeClientBlackBerry::createPopupMenu(PopupMenuClient* client) const
@@ -296,6 +301,24 @@ PassRefPtr<SearchPopupMenu> ChromeClientBlackBerry::createSearchPopupMenu(PopupM
     return adoptRef(new SearchPopupMenuBlackBerry(client));
 }
 
+PagePopup* ChromeClientBlackBerry::openPagePopup(PagePopupClient* client, const IntRect& originBoundsInRootView)
+{
+    closePagePopup(0);
+
+    PagePopupBlackBerry* webPopup = new PagePopupBlackBerry(m_webPagePrivate, client, rootViewToScreen(originBoundsInRootView));
+    m_webPagePrivate->m_webPage->popupOpened(webPopup);
+    webPopup->sendCreatePopupWebViewRequest();
+    return webPopup;
+}
+
+void ChromeClientBlackBerry::closePagePopup(PagePopup*)
+{
+    if (hasOpenedPopup()) {
+        PagePopupBlackBerry* webPopup = m_webPagePrivate->m_webPage->popup();
+        webPopup->closePopup();
+        m_webPagePrivate->m_webPage->popupClosed();
+    }
+}
 
 void ChromeClientBlackBerry::setToolbarsVisible(bool)
 {
@@ -689,6 +712,37 @@ void ChromeClientBlackBerry::exitFullscreenForNode(Node* node)
 {
     m_webPagePrivate->exitFullscreenForNode(node);
 }
+
+#if ENABLE(FULLSCREEN_API)
+bool ChromeClientBlackBerry::supportsFullScreenForElement(const WebCore::Element* element, bool withKeyboard)
+{
+    return !withKeyboard;
+}
+
+void ChromeClientBlackBerry::enterFullScreenForElement(WebCore::Element* element)
+{
+    element->document()->webkitWillEnterFullScreenForElement(element);
+    m_webPagePrivate->enterFullScreenForElement(element);
+    element->document()->webkitDidEnterFullScreenForElement(element);
+}
+
+void ChromeClientBlackBerry::exitFullScreenForElement(WebCore::Element* element)
+{
+    element->document()->webkitWillExitFullScreenForElement(element);
+    m_webPagePrivate->exitFullScreenForElement(element);
+    element->document()->webkitDidExitFullScreenForElement(element);
+}
+
+void ChromeClientBlackBerry::fullScreenRendererChanged(RenderBox* fullScreenRenderer)
+{
+    // Once we go fullscreen using the new FULLSCREEN_API code path, we have to take into account
+    // our port specific page scaling.
+    if (fullScreenRenderer) {
+        int width = m_webPagePrivate->m_mainFrame->view()->visibleContentRect().size().width();
+        fullScreenRenderer->style()->setWidth(Length(width, Fixed));
+    }
+}
+#endif
 
 #if ENABLE(WEBGL)
 void ChromeClientBlackBerry::requestWebGLPermission(Frame* frame)

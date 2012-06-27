@@ -27,6 +27,14 @@ function clickEnterFullscreenButton()
     eventSender.mouseUp();
 }
 
+function fullscreenchange()
+{
+    if (document.webkitIsFullScreen)
+        beginfullscreen();
+    else
+        endfullscreen();
+}
+
 function beginfullscreen()
 {
     testExpected("mediaElement.webkitDisplayingFullscreen", true);
@@ -58,7 +66,7 @@ function canplaythrough()
         testException("mediaElement.webkitEnterFullScreen()", "DOMException.INVALID_STATE_ERR");
 
     // Click on the button
-    if (window.layoutTestController)
+    if (window.testRunner)
         setTimeout(clickEnterFullscreenButton, 10);
     else
         openNextMovie();
@@ -114,5 +122,6 @@ function addEventListeners(elem)
 
     waitForEvent('webkitbeginfullscreen', beginfullscreen);
     waitForEvent('webkitendfullscreen', endfullscreen);
+    waitForEvent('webkitfullscreenchange', fullscreenchange);
 }
 

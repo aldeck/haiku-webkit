@@ -130,6 +130,7 @@
 #include <QDropEvent>
 #include <QFileDialog>
 #include <QInputDialog>
+#include <QLabel>
 #include <QMenu>
 #include <QMessageBox>
 #include <QNetworkProxy>
@@ -843,7 +844,7 @@ QMenu *QWebPage::createStandardContextMenu()
 {
 #ifndef QT_NO_CONTEXTMENU
     QMenu* menu = d->currentContextMenu.data();
-    d->currentContextMenu.clear();
+    d->currentContextMenu = 0;
     return menu;
 #else
     return 0;
@@ -1688,12 +1689,12 @@ IntPoint QWebPagePrivate::TouchAdjuster::findCandidatePointForTouch(const IntPoi
     \value CopyLinkToClipboard Copy the current link to the clipboard.
     \value OpenImageInNewWindow Open the highlighted image in a new window.
     \value DownloadImageToDisk Download the highlighted image to the disk.
-    \value CopyImageToClipboard Copy the highlighted image to the clipboard.
+    \value CopyImageToClipboard Copy the highlighted image to the clipboard.  (Added in Qt 4.8)
     \value CopyImageUrlToClipboard Copy the highlighted image's URL to the clipboard.
     \value Back Navigate back in the history of navigated links.
     \value Forward Navigate forward in the history of navigated links.
     \value Stop Stop loading the current page.
-    \value StopScheduledPageRefresh Stop all pending page refresh/redirect requests.
+    \value StopScheduledPageRefresh Stop all pending page refresh/redirect requests.  (Added in Qt 4.7)
     \value Reload Reload the current page.
     \value ReloadAndBypassCache Reload the current page, but do not use any local cache. (Added in Qt 4.6)
     \value Cut Cut the content currently selected into the clipboard.
@@ -1737,19 +1738,19 @@ IntPoint QWebPagePrivate::TouchAdjuster::findCandidatePointForTouch(const IntPoi
     \value InsertParagraphSeparator Insert a new paragraph.
     \value InsertLineSeparator Insert a new line.
     \value SelectAll Selects all content.
-    \value PasteAndMatchStyle Paste content from the clipboard with current style.
-    \value RemoveFormat Removes formatting and style.
-    \value ToggleStrikethrough Toggle the formatting between strikethrough and normal style.
-    \value ToggleSubscript Toggle the formatting between subscript and baseline.
-    \value ToggleSuperscript Toggle the formatting between supercript and baseline.
-    \value InsertUnorderedList Toggles the selection between an ordered list and a normal block.
-    \value InsertOrderedList Toggles the selection between an ordered list and a normal block.
-    \value Indent Increases the indentation of the currently selected format block by one increment.
-    \value Outdent Decreases the indentation of the currently selected format block by one increment.
-    \value AlignCenter Applies center alignment to content.
-    \value AlignJustified Applies full justification to content.
-    \value AlignLeft Applies left justification to content.
-    \value AlignRight Applies right justification to content.
+    \value PasteAndMatchStyle Paste content from the clipboard with current style. (Added in Qt 4.6)
+    \value RemoveFormat Removes formatting and style. (Added in Qt 4.6)
+    \value ToggleStrikethrough Toggle the formatting between strikethrough and normal style. (Added in Qt 4.6)
+    \value ToggleSubscript Toggle the formatting between subscript and baseline. (Added in Qt 4.6)
+    \value ToggleSuperscript Toggle the formatting between supercript and baseline. (Added in Qt 4.6)
+    \value InsertUnorderedList Toggles the selection between an ordered list and a normal block. (Added in Qt 4.6)
+    \value InsertOrderedList Toggles the selection between an ordered list and a normal block. (Added in Qt 4.6)
+    \value Indent Increases the indentation of the currently selected format block by one increment. (Added in Qt 4.6)
+    \value Outdent Decreases the indentation of the currently selected format block by one increment. (Added in Qt 4.6)
+    \value AlignCenter Applies center alignment to content. (Added in Qt 4.6)
+    \value AlignJustified Applies full justification to content. (Added in Qt 4.6)
+    \value AlignLeft Applies left justification to content. (Added in Qt 4.6)
+    \value AlignRight Applies right justification to content. (Added in Qt 4.6)
 
 
     \omitvalue WebActionCount
@@ -2082,7 +2083,12 @@ void QWebPage::javaScriptAlert(QWebFrame *frame, const QString& msg)
     Q_UNUSED(frame)
 #ifndef QT_NO_MESSAGEBOX
     QWidget* parent = (d->client) ? d->client->ownerWidget() : 0;
-    QMessageBox::information(parent, tr("JavaScript Alert - %1").arg(mainFrame()->url().host()), escapeHtml(msg), QMessageBox::Ok);
+    QMessageBox box(parent);
+    box.setWindowTitle(tr("JavaScript Alert - %1").arg(mainFrame()->url().host()));
+    box.setTextFormat(Qt::PlainText);
+    box.setText(msg);
+    box.setStandardButtons(QMessageBox::Ok);
+    box.exec();
 #endif
 }
 
@@ -2090,7 +2096,7 @@ void QWebPage::javaScriptAlert(QWebFrame *frame, const QString& msg)
     This function is called whenever a JavaScript program running inside \a frame calls the confirm() function
     with the message, \a msg. Returns true if the user confirms the message; otherwise returns false.
 
-    The default implementation executes the query using QMessageBox::information with QMessageBox::Yes and QMessageBox::No buttons.
+    The default implementation executes the query using QMessageBox::information with QMessageBox::Ok and QMessageBox::Cancel buttons.
 */
 bool QWebPage::javaScriptConfirm(QWebFrame *frame, const QString& msg)
 {
@@ -2099,7 +2105,12 @@ bool QWebPage::javaScriptConfirm(QWebFrame *frame, const QString& msg)
     return true;
 #else
     QWidget* parent = (d->client) ? d->client->ownerWidget() : 0;
-    return QMessageBox::Yes == QMessageBox::information(parent, tr("JavaScript Confirm - %1").arg(mainFrame()->url().host()), escapeHtml(msg), QMessageBox::Yes, QMessageBox::No);
+    QMessageBox box(parent);
+    box.setWindowTitle(tr("JavaScript Confirm - %1").arg(mainFrame()->url().host()));
+    box.setTextFormat(Qt::PlainText);
+    box.setText(msg);
+    box.setStandardButtons(QMessageBox::Ok | QMessageBox::Cancel);
+    return QMessageBox::Ok == box.exec();
 #endif
 }
 
@@ -2118,10 +2129,30 @@ bool QWebPage::javaScriptPrompt(QWebFrame *frame, const QString& msg, const QStr
     Q_UNUSED(frame)
     bool ok = false;
 #ifndef QT_NO_INPUTDIALOG
+
     QWidget* parent = (d->client) ? d->client->ownerWidget() : 0;
-    QString x = QInputDialog::getText(parent, tr("JavaScript Prompt - %1").arg(mainFrame()->url().host()), escapeHtml(msg), QLineEdit::Normal, defaultValue, &ok);
+    QInputDialog dlg(parent);
+    dlg.setWindowTitle(tr("JavaScript Prompt - %1").arg(mainFrame()->url().host()));
+
+    // Hack to force the dialog's QLabel into plain text mode
+    // prevents https://bugs.webkit.org/show_bug.cgi?id=34429
+    QLabel* label = dlg.findChild<QLabel*>();
+    if (label)
+        label->setTextFormat(Qt::PlainText);
+
+    // double the &'s because single & will underline the following character
+    // (Accelerator mnemonics)
+    QString escMsg(msg);
+    escMsg.replace(QChar::fromLatin1('&'), QLatin1String("&&"));
+    dlg.setLabelText(escMsg);
+
+    dlg.setTextEchoMode(QLineEdit::Normal);
+    dlg.setTextValue(defaultValue);
+
+    ok = !!dlg.exec();
+
     if (ok && result)
-        *result = x;
+        *result = dlg.textValue();
 #endif
     return ok;
 }
@@ -2533,7 +2564,7 @@ QWebPage::ViewportAttributes QWebPage::viewportAttributesForSize(const QSize& av
     WebCore::restrictScaleFactorToInitialScaleIfNotUserScalable(conf);
 
     result.m_isValid = true;
-    result.m_size = conf.layoutSize;
+    result.m_size = QSizeF(conf.layoutSize.width(), conf.layoutSize.height());
     result.m_initialScaleFactor = conf.initialScale;
     result.m_minimumScaleFactor = conf.minimumScale;
     result.m_maximumScaleFactor = conf.maximumScale;
@@ -3120,7 +3151,7 @@ bool QWebPage::event(QEvent *ev)
     case QEvent::TouchBegin:
     case QEvent::TouchUpdate:
     case QEvent::TouchEnd:
-#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
+#if HAVE(QT5)
     case QEvent::TouchCancel:
 #endif
         // Return whether the default action was cancelled in the JS event handler
@@ -3407,7 +3438,7 @@ void QWebPage::updatePositionDependentActions(const QPoint &pos)
 
     \inmodule QtWebKit
 
-    \sa QWebPage::extension() QWebPage::ExtensionReturn
+    \sa QWebPage::extension(), QWebPage::ExtensionReturn
 */
 
 
@@ -3418,7 +3449,7 @@ void QWebPage::updatePositionDependentActions(const QPoint &pos)
 
     \inmodule QtWebKit
 
-    \sa QWebPage::extension() QWebPage::ExtensionOption
+    \sa QWebPage::extension(), QWebPage::ExtensionOption
 */
 
 /*!
@@ -3434,7 +3465,7 @@ void QWebPage::updatePositionDependentActions(const QPoint &pos)
 
     The error itself is reported by an error \a domain, the \a error code as well as \a errorString.
 
-    \sa QWebPage::extension() QWebPage::ErrorPageExtensionReturn
+    \sa QWebPage::extension(), QWebPage::ErrorPageExtensionReturn
 */
 
 /*!
@@ -3481,7 +3512,7 @@ void QWebPage::updatePositionDependentActions(const QPoint &pos)
     External objects such as stylesheets or images referenced in the HTML are located relative to
     \a baseUrl.
 
-    \sa QWebPage::extension() QWebPage::ErrorPageExtensionOption, QString::toUtf8()
+    \sa QWebPage::extension(), QWebPage::ErrorPageExtensionOption, QString::toUtf8()
 */
 
 /*!
@@ -3524,7 +3555,7 @@ void QWebPage::updatePositionDependentActions(const QPoint &pos)
     The ChooseMultipleFilesExtensionOption class holds the frame originating the request
     and the suggested filenames which might be provided.
 
-    \sa QWebPage::extension() QWebPage::chooseFile(), QWebPage::ChooseMultipleFilesExtensionReturn
+    \sa QWebPage::extension(), QWebPage::chooseFile(), QWebPage::ChooseMultipleFilesExtensionReturn
 */
 
 /*!
@@ -3553,7 +3584,7 @@ void QWebPage::updatePositionDependentActions(const QPoint &pos)
     The ChooseMultipleFilesExtensionReturn class holds the filenames selected by the user
     when the extension is invoked.
 
-    \sa QWebPage::extension() QWebPage::ChooseMultipleFilesExtensionOption
+    \sa QWebPage::extension(), QWebPage::ChooseMultipleFilesExtensionOption
 */
 
 /*!

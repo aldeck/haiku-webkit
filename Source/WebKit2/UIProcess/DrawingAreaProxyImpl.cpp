@@ -134,14 +134,16 @@ void DrawingAreaProxyImpl::layerHostingModeDidChange()
 
 void DrawingAreaProxyImpl::visibilityDidChange()
 {
-    if (!m_webPageProxy->isViewVisible()) {
-        // Suspend painting.
-        m_webPageProxy->process()->send(Messages::DrawingArea::SuspendPainting(), m_webPageProxy->pageID());
-        return;
-    }
+    if (!m_webPageProxy->suppressVisibilityUpdates()) {
+        if (!m_webPageProxy->isViewVisible()) {
+            // Suspend painting.
+            m_webPageProxy->process()->send(Messages::DrawingArea::SuspendPainting(), m_webPageProxy->pageID());
+            return;
+        }
 
-    // Resume painting.
-    m_webPageProxy->process()->send(Messages::DrawingArea::ResumePainting(), m_webPageProxy->pageID());
+        // Resume painting.
+        m_webPageProxy->process()->send(Messages::DrawingArea::ResumePainting(), m_webPageProxy->pageID());
+    }
 
 #if USE(ACCELERATED_COMPOSITING)
     // If we don't have a backing store, go ahead and mark the backing store as being changed so
@@ -243,6 +245,17 @@ void DrawingAreaProxyImpl::exitAcceleratedCompositingMode(uint64_t backingStoreS
 #endif
 
     incorporateUpdate(updateInfo);
+}
+
+void DrawingAreaProxyImpl::updateAcceleratedCompositingMode(uint64_t backingStoreStateID, const LayerTreeContext& layerTreeContext)
+{
+    ASSERT_ARG(backingStoreStateID, backingStoreStateID <= m_currentBackingStoreStateID);
+    if (backingStoreStateID < m_currentBackingStoreStateID)
+        return;
+
+#if USE(ACCELERATED_COMPOSITING)
+    updateAcceleratedCompositingMode(layerTreeContext);
+#endif
 }
 
 void DrawingAreaProxyImpl::incorporateUpdate(const UpdateInfo& updateInfo)
@@ -367,6 +380,14 @@ void DrawingAreaProxyImpl::exitAcceleratedCompositingMode()
 
     m_layerTreeContext = LayerTreeContext();    
     m_webPageProxy->exitAcceleratedCompositingMode();
+}
+
+void DrawingAreaProxyImpl::updateAcceleratedCompositingMode(const LayerTreeContext& layerTreeContext)
+{
+    ASSERT(isInAcceleratedCompositingMode());
+
+    m_layerTreeContext = layerTreeContext;
+    m_webPageProxy->updateAcceleratedCompositingMode(layerTreeContext);
 }
 #endif
 

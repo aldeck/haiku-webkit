@@ -46,6 +46,7 @@ import time
 
 from webkitpy.layout_tests.controllers import manager_worker_broker
 from webkitpy.layout_tests.controllers import worker
+from webkitpy.layout_tests.controllers.test_result_writer import TestResultWriter
 from webkitpy.layout_tests.layout_package import json_layout_results_generator
 from webkitpy.layout_tests.layout_package import json_results_generator
 from webkitpy.layout_tests.models import test_expectations
@@ -105,6 +106,7 @@ def use_trac_links_in_results_html(port_obj):
     # We only use trac links on the buildbots.
     # Use existence of builder_name as a proxy for knowing we're on a bot.
     return port_obj.get_option("builder_name")
+
 
 # FIXME: This should be on the Manager class (since that's the only caller)
 # or split off from Manager onto another helper class, but should not be a free function.
@@ -234,10 +236,13 @@ def summarize_results(port_obj, expectations, result_summary, retry_summary, tes
     results['layout_tests_dir'] = port_obj.layout_tests_dir()
     results['has_wdiff'] = port_obj.wdiff_available()
     results['has_pretty_patch'] = port_obj.pretty_patch_available()
+    results['pixel_tests_enabled'] = port_obj.get_option('pixel_tests')
+
     try:
         # We only use the svn revision for using trac links in the results.html file,
         # Don't do this by default since it takes >100ms.
         if use_trac_links_in_results_html(port_obj):
+            port_obj.host._initialize_scm()
             results['revision'] = port_obj.host.scm().head_svn_revision()
     except Exception, e:
         _log.warn("Failed to determine svn revision for checkout (cwd: %s, webkit_base: %s), leaving 'revision' key blank in full_results.json.\n%s" % (port_obj._filesystem.getcwd(), port_obj.path_from_webkit_base(), e))
@@ -301,6 +306,7 @@ class Manager(object):
         self._expectations = None
 
         self.HTTP_SUBDIR = 'http' + port.TEST_PATH_SEPARATOR
+        self.PERF_SUBDIR = 'perf'
         self.WEBSOCKET_SUBDIR = 'websocket' + port.TEST_PATH_SEPARATOR
         self.LAYOUT_TESTS_DIRECTORY = 'LayoutTests'
         self._has_http_lock = False
@@ -312,6 +318,8 @@ class Manager(object):
         #        options.results_directory, use_tls=True, port=9323)
 
         # a set of test files, and the same tests as a list
+
+        self._paths = set()
 
         # FIXME: Rename to test_names.
         self._test_files = set()
@@ -337,6 +345,7 @@ class Manager(object):
         paths = self._strip_test_dir_prefixes(args)
         if self._options.test_list:
             paths += self._strip_test_dir_prefixes(read_test_files(self._filesystem, self._options.test_list, self._port.TEST_PATH_SEPARATOR))
+        self._paths = set(paths)
         self._test_files = self._port.tests(paths)
 
     def _strip_test_dir_prefixes(self, paths):
@@ -357,20 +366,14 @@ class Manager(object):
     def _http_tests(self):
         return set(test for test in self._test_files if self._is_http_test(test))
 
+    def _websocket_tests(self):
+        return set(test for test in self._test_files if self.WEBSOCKET_SUBDIR in test)
+
+    def _is_perf_test(self, test):
+        return self.PERF_SUBDIR == test or (self.PERF_SUBDIR + self._port.TEST_PATH_SEPARATOR) in test
+
     def parse_expectations(self):
-        """Parse the expectations from the test_list files and return a data
-        structure holding them. Throws an error if the test_list files have
-        invalid syntax."""
-        port = self._port
-        tests_to_ignore = set(self._options.ignore_tests)
-        self._expectations = test_expectations.TestExpectations(
-            port,
-            self._test_files,
-            port.test_expectations(),
-            port.test_configuration(),
-            self._options.lint_test_files,
-            port.test_expectations_overrides(),
-            port.skipped_layout_tests(self._test_files).union(tests_to_ignore))
+        self._expectations = test_expectations.TestExpectations(self._port, self._test_files)
 
     def _split_into_chunks_if_necessary(self, skipped):
         if not self._options.run_chunk and not self._options.run_part:
@@ -462,24 +465,40 @@ class Manager(object):
 
         # Remove skipped - both fixable and ignored - files from the
         # top-level list of files to test.
+        found_test_files = set(self._test_files)
         num_all_test_files = len(self._test_files)
-        self._printer.print_expected("Found:  %d tests" % (len(self._test_files)))
+
+        skipped = self._expectations.get_tests_with_result_type(test_expectations.SKIP)
+        if not self._options.http:
+            skipped.update(set(self._http_tests()))
+
+        if self._options.skipped == 'only':
+            self._test_files = self._test_files.intersection(skipped)
+        elif self._options.skipped == 'default':
+            self._test_files -= skipped
+        elif self._options.skipped == 'ignore':
+            pass  # just to be clear that we're ignoring the skip list.
+
+        if self._options.skip_failing_tests:
+            self._test_files -= self._expectations.get_tests_with_result_type(test_expectations.FAIL)
+            self._test_files -= self._expectations.get_tests_with_result_type(test_expectations.FLAKY)
+
+        # now make sure we're explicitly running any tests passed on the command line.
+        self._test_files.update(found_test_files.intersection(self._paths))
+
         if not num_all_test_files:
             _log.critical('No tests to run.')
             return None
 
-        skipped = set()
-
-        if not self._options.http:
-            skipped = skipped.union(self._http_tests())
-
-        if num_all_test_files > 1 and not self._options.force:
-            skipped = skipped.union(self._expectations.get_tests_with_result_type(test_expectations.SKIP))
-            if self._options.skip_failing_tests:
-                failing = self._expectations.get_tests_with_result_type(test_expectations.FAIL)
-                self._test_files -= failing
-
-        self._test_files -= skipped
+        num_skipped = num_all_test_files - len(self._test_files)
+        if num_skipped:
+            self._printer.print_expected("Running %s (found %d, skipping %d)." % (
+                grammar.pluralize('test', num_all_test_files - num_skipped),
+                num_all_test_files, num_skipped))
+        elif len(self._test_files) > 1:
+            self._printer.print_expected("Running all %d tests." % len(self._test_files))
+        else:
+            self._printer.print_expected("Running %1 test.")
 
         # Create a sorted list of test files so the subset chunk,
         # if used, contains alphabetically consecutive tests.
@@ -510,9 +529,7 @@ class Manager(object):
         self._print_expected_results_of_type(result_summary, test_expectations.FLAKY, "flaky")
         self._print_expected_results_of_type(result_summary, test_expectations.SKIP, "skipped")
 
-        if self._options.force:
-            self._printer.print_expected('Running all tests, including skips (--force)')
-        else:
+        if self._options.skipped != 'ignore':
             # Note that we don't actually run the skipped tests (they were
             # subtracted out of self._test_files, above), but we stub out the
             # results here so the statistics can remain accurate.
@@ -554,8 +571,10 @@ class Manager(object):
 
     def _test_requires_lock(self, test_file):
         """Return True if the test needs to be locked when
-        running multiple copies of NRWTs."""
-        return self._is_http_test(test_file)
+        running multiple copies of NRWTs. Perf tests are locked
+        because heavy load caused by running other tests in parallel
+        might cause some of them to timeout."""
+        return self._is_http_test(test_file) or self._is_perf_test(test_file)
 
     def _test_is_slow(self, test_file):
         return self._expectations.has_modifier(test_file, test_expectations.SLOW)
@@ -746,8 +765,8 @@ class Manager(object):
 
         all_shards = locked_shards + unlocked_shards
         self._remaining_locked_shards = locked_shards
-        if locked_shards:
-            self.start_servers_with_lock()
+        if locked_shards and self._options.http:
+            self.start_servers_with_lock(2 * min(num_workers, len(locked_shards)))
 
         num_workers = min(num_workers, len(all_shards))
         self._log_num_workers(num_workers, len(all_shards), len(locked_shards))
@@ -801,7 +820,8 @@ class Manager(object):
                         _log.error('Worker %d did not exit in time.' % worker_state.number)
 
         except KeyboardInterrupt:
-            self._printer.print_update('Interrupted, exiting ...')
+            self._printer.flush()
+            self._printer.write('Interrupted, exiting ...')
             self.cancel_workers()
             keyboard_interrupted = True
         except TestRunInterruptedException, e:
@@ -915,6 +935,10 @@ class Manager(object):
 
         end_time = time.time()
 
+        # Some crash logs can take a long time to be written out so look
+        # for new logs after the test run finishes.
+        self._look_for_new_crash_logs(result_summary, start_time)
+        self._look_for_new_crash_logs(retry_summary, start_time)
         self._clean_up_run()
 
         self._print_timing_statistics(end_time - start_time, thread_timings, test_timings, individual_test_timings, result_summary)
@@ -945,22 +969,25 @@ class Manager(object):
 
         return self._port.exit_code_from_summarized_results(unexpected_results)
 
-    def start_servers_with_lock(self):
-        assert(self._options.http)
+    def start_servers_with_lock(self, number_of_servers):
         self._printer.print_update('Acquiring http lock ...')
         self._port.acquire_http_lock()
-        self._printer.print_update('Starting HTTP server ...')
-        self._port.start_http_server()
-        self._printer.print_update('Starting WebSocket server ...')
-        self._port.start_websocket_server()
+        if self._http_tests():
+            self._printer.print_update('Starting HTTP server ...')
+            self._port.start_http_server(number_of_servers=number_of_servers)
+        if self._websocket_tests():
+            self._printer.print_update('Starting WebSocket server ...')
+            self._port.start_websocket_server()
         self._has_http_lock = True
 
     def stop_servers_with_lock(self):
         if self._has_http_lock:
-            self._printer.print_update('Stopping HTTP server ...')
-            self._port.stop_http_server()
-            self._printer.print_update('Stopping WebSocket server ...')
-            self._port.stop_websocket_server()
+            if self._http_tests():
+                self._printer.print_update('Stopping HTTP server ...')
+                self._port.stop_http_server()
+            if self._websocket_tests():
+                self._printer.print_update('Stopping WebSocket server ...')
+                self._port.stop_websocket_server()
             self._printer.print_update('Releasing server lock ...')
             self._port.release_http_lock()
             self._has_http_lock = False
@@ -975,6 +1002,29 @@ class Manager(object):
         self._port.stop_helper()
         _log.debug("cleaning up port")
         self._port.clean_up_test_run()
+
+    def _look_for_new_crash_logs(self, result_summary, start_time):
+        """Since crash logs can take a long time to be written out if the system is
+           under stress do a second pass at the end of the test run.
+
+           result_summary: the results of the test run
+           start_time: time the tests started at.  We're looking for crash
+               logs after that time.
+        """
+        crashed_processes = []
+        for test, result in result_summary.unexpected_results.iteritems():
+            if (result.type != test_expectations.CRASH):
+                continue
+            for failure in result.failures:
+                if not isinstance(failure, test_failures.FailureCrash):
+                    continue
+                crashed_processes.append([test, failure.process_name, failure.pid])
+
+        crash_logs = self._port.look_for_new_crash_logs(crashed_processes, start_time)
+        if crash_logs:
+            for test, crash_log in crash_logs.iteritems():
+                writer = TestResultWriter(self._port._filesystem, self._port, self._port.results_directory(), test)
+                writer.write_crash_log(crash_log)
 
     def update_summary(self, result_summary):
         """Update the summary and print results with any completed tests."""
@@ -1422,9 +1472,10 @@ class Manager(object):
         worker_state.current_test_name = test_info.test_name
         worker_state.next_timeout = time.time() + hang_timeout
 
-    def handle_done(self, source):
+    def handle_done(self, source, log_messages=None):
         worker_state = self._worker_states[source]
         worker_state.done = True
+        self._log_messages(log_messages)
 
     def handle_exception(self, source, exception_type, exception_value, stack):
         if exception_type in (KeyboardInterrupt, TestRunInterruptedException):
@@ -1451,15 +1502,20 @@ class Manager(object):
             if not self._remaining_locked_shards:
                 self.stop_servers_with_lock()
 
-    def handle_finished_test(self, source, result, elapsed_time):
+    def handle_finished_test(self, source, result, elapsed_time, log_messages=None):
         worker_state = self._worker_states[source]
         worker_state.next_timeout = None
         worker_state.current_test_name = None
         worker_state.stats['total_time'] += elapsed_time
         worker_state.stats['num_tests'] += 1
 
+        self._log_messages(log_messages)
         self._all_results.append(result)
         self._update_summary_with_result(self._current_result_summary, result)
+
+    def _log_messages(self, messages):
+        for message in messages:
+            self._printer.writeln(*message)
 
     def _log_worker_stack(self, stack):
         webkitpydir = self._port.path_from_webkit_base('Tools', 'Scripts', 'webkitpy') + self._filesystem.sep

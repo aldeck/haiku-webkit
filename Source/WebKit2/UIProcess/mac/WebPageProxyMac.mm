@@ -27,6 +27,7 @@
 #import "WebPageProxy.h"
 
 #import "AttributedString.h"
+#import "ColorSpaceData.h"
 #import "DataReference.h"
 #import "DictionaryPopupInfo.h"
 #import "EditorState.h"
@@ -38,7 +39,9 @@
 #import "TextChecker.h"
 #import "WebPageMessages.h"
 #import "WebProcessProxy.h"
+#import <WebCore/DictationAlternative.h>
 #import <WebCore/SharedBuffer.h>
+#import <WebCore/TextAlternativeWithRange.h>
 #import <WebKitSystemInterface.h>
 #import <wtf/text/StringConcatenate.h>
 
@@ -140,7 +143,7 @@ void WebPageProxy::searchWithSpotlight(const String& string)
 {
     [[NSWorkspace sharedWorkspace] showSearchResultsForQueryString:nsStringFromWebCoreString(string)];
 }
-
+    
 CGContextRef WebPageProxy::containingWindowGraphicsContext()
 {
     return m_pageClient->containingWindowGraphicsContext();
@@ -196,6 +199,35 @@ bool WebPageProxy::insertText(const String& text, uint64_t replacementRangeStart
     bool handled = true;
     process()->sendSync(Messages::WebPage::InsertText(text, replacementRangeStart, replacementRangeEnd), Messages::WebPage::InsertText::Reply(handled, m_editorState), m_pageID);
     return handled;
+}
+
+bool WebPageProxy::insertDictatedText(const String& text, uint64_t replacementRangeStart, uint64_t replacementRangeEnd, const Vector<TextAlternativeWithRange>& dictationAlternativesWithRange)
+{
+#if USE(DICTATION_ALTERNATIVES)
+    if (dictationAlternativesWithRange.isEmpty())
+        return insertText(text, replacementRangeStart, replacementRangeEnd);
+
+    if (!isValid())
+        return true;
+
+    Vector<DictationAlternative> dictationAlternatives;
+
+    for (size_t i = 0; i < dictationAlternativesWithRange.size(); ++i) {
+        const TextAlternativeWithRange& alternativeWithRange = dictationAlternativesWithRange[i];
+        uint64_t dictationContext = m_pageClient->addDictationAlternatives(alternativeWithRange.alternatives);
+        if (dictationContext)
+            dictationAlternatives.append(DictationAlternative(alternativeWithRange.range.location, alternativeWithRange.range.length, dictationContext));
+    }
+
+    if (dictationAlternatives.isEmpty())
+        return insertText(text, replacementRangeStart, replacementRangeEnd);
+
+    bool handled = true;
+    process()->sendSync(Messages::WebPage::InsertDictatedText(text, replacementRangeStart, replacementRangeEnd, dictationAlternatives), Messages::WebPage::InsertDictatedText::Reply(handled, m_editorState), m_pageID);
+    return handled;
+#else
+    return insertText(text, replacementRangeStart, replacementRangeEnd);
+#endif
 }
 
 void WebPageProxy::getMarkedRange(uint64_t& location, uint64_t& length)
@@ -294,6 +326,7 @@ bool WebPageProxy::readSelectionFromPasteboard(const String& pasteboardName)
     return result;
 }
 
+#if ENABLE(DRAG_SUPPORT)
 void WebPageProxy::setDragImage(const WebCore::IntPoint& clientPosition, const ShareableBitmap::Handle& dragImageHandle, bool isLinkDrag)
 {
     RefPtr<ShareableBitmap> dragImage = ShareableBitmap::create(dragImageHandle);
@@ -316,6 +349,7 @@ void WebPageProxy::setPromisedData(const String& pasteboardName, const SharedMem
     }
     m_pageClient->setPromisedData(pasteboardName, imageBuffer, filename, extension, title, url, visibleURL, archiveBuffer);
 }
+#endif
 
 void WebPageProxy::performDictionaryLookupAtLocation(const WebCore::FloatPoint& point)
 {
@@ -356,7 +390,7 @@ void WebPageProxy::capitalizeWord()
 }
 
 void WebPageProxy::setSmartInsertDeleteEnabled(bool isSmartInsertDeleteEnabled)
-{ 
+{
     if (m_isSmartInsertDeleteEnabled == isSmartInsertDeleteEnabled)
         return;
 
@@ -379,7 +413,12 @@ void WebPageProxy::makeFirstResponder()
 {
     m_pageClient->makeFirstResponder();
 }
-    
+
+ColorSpaceData WebPageProxy::colorSpace()
+{
+    return m_pageClient->colorSpace();
+}
+
 void WebPageProxy::registerUIProcessAccessibilityTokens(const CoreIPC::DataReference& elementToken, const CoreIPC::DataReference& windowToken)
 {
     if (!isValid())

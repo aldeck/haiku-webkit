@@ -155,10 +155,6 @@ void LayoutTestController::setSmartInsertDeleteEnabled(bool flag)
     // FIXME: implement
 }
 
-void LayoutTestController::setJavaScriptProfilingEnabled(bool flag)
-{
-}
-
 void LayoutTestController::setWaitToDump(bool waitUntilDone)
 {
     static const int timeoutSeconds = 10;
@@ -311,16 +307,6 @@ unsigned LayoutTestController::numberOfActiveAnimations() const
 {
     // FIXME: implement
     return 0;
-}
-
-void LayoutTestController::suspendAnimations() const
-{
-    // FIXME: implement
-}
-
-void LayoutTestController::resumeAnimations() const
-{
-    // FIXME: implement
 }
 
 unsigned LayoutTestController::workerThreadCount() const
@@ -486,11 +472,6 @@ void LayoutTestController::setScrollbarPolicy(JSStringRef orientation, JSStringR
     // FIXME: implement
 }
 
-JSRetainPtr<JSStringRef> LayoutTestController::counterValueForElementById(JSStringRef id)
-{
-    return 0;
-}
-
 int LayoutTestController::pageNumberForElementById(JSStringRef, float, float)
 {
     // FIXME: implement
@@ -546,11 +527,6 @@ void LayoutTestController::authenticateSession(JSStringRef, JSStringRef, JSStrin
 {
 }
 
-void LayoutTestController::setEditingBehavior(const char* editingBehavior)
-{
-    // FIXME: Implement
-}
-
 void LayoutTestController::abortModal()
 {
 }
@@ -564,12 +540,6 @@ JSRetainPtr<JSStringRef> LayoutTestController::pageProperty(const char* property
 {
     // FIXME: Implement
     return 0;
-}
-
-bool LayoutTestController::isPageBoxVisible(int pageNumber) const
-{
-    // FIXME: Implement
-    return true;
 }
 
 JSRetainPtr<JSStringRef> LayoutTestController::pageSizeAndMarginsInPixels(int pageNumber, int width, int height, int marginTop, int marginRight, int marginBottom, int marginLeft) const
@@ -629,10 +599,6 @@ void LayoutTestController::setTextDirection(JSStringRef direction)
     // FIXME: Implement.
 }
 
-void LayoutTestController::allowRoundingHacks()
-{
-}
-
 void LayoutTestController::addChromeInputField()
 {
 }
@@ -652,4 +618,29 @@ void LayoutTestController::setBackingScaleFactor(double)
 void LayoutTestController::simulateDesktopNotificationClick(JSStringRef title)
 {
     // FIXME: Implement.
+}
+
+void LayoutTestController::resetPageVisibility()
+{
+    // FIXME: Implement this.
+}
+
+void LayoutTestController::setPageVisibility(const char*)
+{
+    // FIXME: Implement this.
+}
+
+void LayoutTestController::setAutomaticLinkDetectionEnabled(bool)
+{
+    // FIXME: Implement this.
+}
+
+void LayoutTestController::sendWebIntentResponse(JSStringRef)
+{
+    // FIXME: Implement this.
+}
+
+void LayoutTestController::deliverWebIntent(JSStringRef, JSStringRef, JSStringRef)
+{
+    // FIXME: Implement this.
 }

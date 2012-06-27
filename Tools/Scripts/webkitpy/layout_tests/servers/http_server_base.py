@@ -47,7 +47,7 @@ class ServerError(Exception):
 class HttpServerBase(object):
     """A skeleton class for starting and stopping servers used by the layout tests."""
 
-    def __init__(self, port_obj):
+    def __init__(self, port_obj, number_of_servers=None):
         self._executive = port_obj._executive
         self._filesystem = port_obj._filesystem
         self._name = '<virtual>'
@@ -55,6 +55,7 @@ class HttpServerBase(object):
         self._pid = None
         self._pid_file = None
         self._port_obj = port_obj
+        self._number_of_servers = number_of_servers
 
         # We need a non-checkout-dependent place to put lock files, etc. We
         # don't use the Python default on the Mac because it defaults to a
@@ -174,12 +175,6 @@ class HttpServerBase(object):
             try:
                 s.connect(('localhost', port))
                 _log.debug("Server running on %d" % port)
-            except socket.error, e:
-                # this branch is needed on Mac 10.5 / python 2.5
-                if e.args[0] not in (errno.ECONNREFUSED, errno.ECONNRESET):
-                    raise
-                _log.debug("Server NOT running on %d: %s" % (port, e))
-                return False
             except IOError, e:
                 if e.errno not in (errno.ECONNREFUSED, errno.ECONNRESET):
                     raise

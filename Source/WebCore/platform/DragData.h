@@ -121,8 +121,13 @@ public:
     bool containsColor() const;
     bool containsFiles() const;
     unsigned numberOfFiles() const;
+    int modifierKeyState() const;
 #if PLATFORM(MAC)
     const String& pasteboardName() { return m_pasteboardName; }
+#endif
+
+#if ENABLE(FILE_SYSTEM)
+    String droppedFileSystemId() const;
 #endif
 
 #if PLATFORM(QT) || PLATFORM(GTK)
@@ -158,4 +163,3 @@ private:
 }
 
 #endif // !DragData_h
-

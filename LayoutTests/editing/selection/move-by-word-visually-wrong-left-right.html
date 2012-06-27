@@ -20,9 +20,9 @@ onload = function() {
     }
 };
 
-if (window.layoutTestController) {
-    layoutTestController.dumpAsText();
-    layoutTestController.setEditingBehavior('win');
+if (window.testRunner && window.internals) {
+    testRunner.dumpAsText();
+    internals.settings.setEditingBehavior('win');
 }
 </script>
 <title>wrong result because VisiblePosition.left()/right() returns wrong result</title>

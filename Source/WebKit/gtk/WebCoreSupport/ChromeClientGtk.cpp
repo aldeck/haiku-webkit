@@ -33,6 +33,7 @@
 #include "FileIconLoader.h"
 #include "FileSystem.h"
 #include "FloatRect.h"
+#include "FocusController.h"
 #include "FrameLoadRequest.h"
 #include "FrameView.h"
 #include "GtkUtilities.h"
@@ -54,6 +55,7 @@
 #include "WebKitDOMBinding.h"
 #include "WebKitDOMHTMLElementPrivate.h"
 #include "WindowFeatures.h"
+#include "webkitfilechooserrequestprivate.h"
 #include "webkitgeolocationpolicydecision.h"
 #include "webkitgeolocationpolicydecisionprivate.h"
 #include "webkitnetworkrequest.h"
@@ -84,6 +86,7 @@ ChromeClient::ChromeClient(WebKitWebView* webView)
     , m_adjustmentWatcher(webView)
     , m_closeSoonTimer(0)
     , m_displayTimer(this, &ChromeClient::paint)
+    , m_forcePaint(false)
     , m_lastDisplayTime(0)
     , m_repaintSoonSourceId(0)
 {
@@ -512,6 +515,7 @@ static void paintWebView(WebKitWebView* webView, Frame* frame, Region dirtyRegio
 
     RefPtr<cairo_t> backingStoreContext = adoptRef(cairo_create(webView->priv->backingStore->cairoSurface()));
     GraphicsContext gc(backingStoreContext.get());
+    gc.applyDeviceScaleFactor(frame->page()->deviceScaleFactor());
     for (size_t i = 0; i < rects.size(); i++) {
         const IntRect& rect = rects[i];
 
@@ -565,7 +569,7 @@ void ChromeClient::paint(WebCore::Timer<ChromeClient>*)
     double timeSinceLastDisplay = currentTime() - m_lastDisplayTime;
     double timeUntilNextDisplay = minimumFrameInterval - timeSinceLastDisplay;
 
-    if (timeUntilNextDisplay > 0) {
+    if (timeUntilNextDisplay > 0 && !m_forcePaint) {
         m_displayTimer.startOneShot(timeUntilNextDisplay);
         return;
     }
@@ -592,12 +596,26 @@ void ChromeClient::paint(WebCore::Timer<ChromeClient>*)
 
 #if USE(ACCELERATED_COMPOSITING)
     m_webView->priv->acceleratedCompositingContext->syncLayersNow();
-    m_webView->priv->acceleratedCompositingContext->renderLayersToWindow(rect);
+    m_webView->priv->acceleratedCompositingContext->renderLayersToWindow(0, rect);
 #endif
 
     m_dirtyRegion = Region();
     m_lastDisplayTime = currentTime();
     m_repaintSoonSourceId = 0;
+
+    // We update the IM context window location here, because we want it to be
+    // synced with cursor movement. For instance, a text field can move without
+    // the selection changing.
+    Frame* focusedFrame = core(m_webView)->focusController()->focusedOrMainFrame();
+    if (focusedFrame && focusedFrame->editor()->canEdit())
+        m_webView->priv->imFilter.setCursorRect(frame->selection()->absoluteCaretBounds());
+}
+
+void ChromeClient::forcePaint()
+{
+    m_forcePaint = true;
+    paint(0);
+    m_forcePaint = false;
 }
 
 void ChromeClient::invalidateRootView(const IntRect&, bool immediate)
@@ -798,40 +816,8 @@ void ChromeClient::reachedApplicationCacheOriginQuota(SecurityOrigin*, int64_t)
 
 void ChromeClient::runOpenPanel(Frame*, PassRefPtr<FileChooser> prpFileChooser)
 {
-    RefPtr<FileChooser> chooser = prpFileChooser;
-
-    GtkWidget* toplevel = gtk_widget_get_toplevel(GTK_WIDGET(m_webView));
-    if (!widgetIsOnscreenToplevelWindow(toplevel))
-        toplevel = 0;
-
-    GtkWidget* dialog = gtk_file_chooser_dialog_new(_("Upload File"),
-                                                    toplevel ? GTK_WINDOW(toplevel) : 0,
-                                                    GTK_FILE_CHOOSER_ACTION_OPEN,
-                                                    GTK_STOCK_CANCEL, GTK_RESPONSE_CANCEL,
-                                                    GTK_STOCK_OPEN, GTK_RESPONSE_ACCEPT,
-                                                    NULL);
-
-    gtk_file_chooser_set_select_multiple(GTK_FILE_CHOOSER(dialog), chooser->settings().allowsMultipleFiles);
-
-    if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT) {
-        if (gtk_file_chooser_get_select_multiple(GTK_FILE_CHOOSER(dialog))) {
-            GOwnPtr<GSList> filenames(gtk_file_chooser_get_filenames(GTK_FILE_CHOOSER(dialog)));
-            Vector<String> names;
-            for (GSList* item = filenames.get() ; item ; item = item->next) {
-                if (!item->data)
-                    continue;
-                names.append(filenameToString(static_cast<char*>(item->data)));
-                g_free(item->data);
-            }
-            chooser->chooseFiles(names);
-        } else {
-            gchar* filename = gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(dialog));
-            if (filename)
-                chooser->chooseFile(filenameToString(filename));
-            g_free(filename);
-        }
-    }
-    gtk_widget_destroy(dialog);
+    GRefPtr<WebKitFileChooserRequest> request = adoptGRef(webkit_file_chooser_request_create(prpFileChooser));
+    webkitWebViewRunFileChooserRequest(m_webView, request.get());
 }
 
 void ChromeClient::loadIconForFiles(const Vector<WTF::String>& filenames, WebCore::FileIconLoader* loader)

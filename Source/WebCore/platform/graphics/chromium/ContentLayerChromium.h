@@ -35,21 +35,24 @@
 #if USE(ACCELERATED_COMPOSITING)
 
 #include "TiledLayerChromium.h"
-#include "cc/CCTiledLayerImpl.h"
+
+class SkCanvas;
 
 namespace WebCore {
 
-class LayerTilerChromium;
+class GraphicsContext;
+class IntRect;
 class LayerTextureUpdater;
 
 class ContentLayerDelegate {
 public:
+    virtual void paintContents(SkCanvas*, const IntRect& clip, IntRect& opaque) = 0;
+
+protected:
     virtual ~ContentLayerDelegate() { }
-    virtual void paintContents(GraphicsContext&, const IntRect& clip) = 0;
-    virtual void didScroll(const IntSize&) = 0;
 };
 
-// A Layer that requires a GraphicsContext to render its contents.
+// A layer that renders its contents into an SkCanvas.
 class ContentLayerChromium : public TiledLayerChromium {
 public:
     static PassRefPtr<ContentLayerChromium> create(ContentLayerDelegate*);
@@ -63,8 +66,6 @@ public:
     virtual void idleUpdate(CCTextureUpdater&, const CCOcclusionTracker*) OVERRIDE;
 
     virtual void setOpaque(bool) OVERRIDE;
-
-    virtual void scrollBy(const IntSize&) OVERRIDE;
 
 protected:
     explicit ContentLayerChromium(ContentLayerDelegate*);

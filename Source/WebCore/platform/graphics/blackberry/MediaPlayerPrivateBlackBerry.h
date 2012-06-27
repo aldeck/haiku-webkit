@@ -83,7 +83,7 @@ public:
     virtual float maxTimeSeekable() const;
     virtual PassRefPtr<TimeRanges> buffered() const;
 
-    virtual unsigned bytesLoaded() const;
+    virtual bool didLoadingProgress() const;
 
     virtual void setSize(const IntSize&);
 
@@ -130,8 +130,11 @@ public:
 #if USE(ACCELERATED_COMPOSITING)
     virtual void onBuffering(bool);
 #endif
+    virtual bool onAuthenticationNeeded(BlackBerry::Platform::MMRAuthChallenge&);
+    virtual void onAuthenticationAccepted(const BlackBerry::Platform::MMRAuthChallenge&) const;
 
     virtual bool isFullscreen() const;
+    virtual bool isElementPaused() const;
     virtual bool isTabVisible() const;
     virtual int showErrorDialog(BlackBerry::Platform::MMRPlayer::Error);
     virtual BlackBerry::Platform::Graphics::Window* platformWindow();
@@ -163,6 +166,7 @@ private:
     void userDrivenSeekTimerFired(Timer<MediaPlayerPrivate>*);
     Timer<MediaPlayerPrivate> m_userDrivenSeekTimer;
     float m_lastSeekTime;
+    bool m_lastSeekTimePending;
     void waitMetadataTimerFired(Timer<MediaPlayerPrivate>*);
     Timer<MediaPlayerPrivate> m_waitMetadataTimer;
     int m_waitMetadataPopDialogCounter;

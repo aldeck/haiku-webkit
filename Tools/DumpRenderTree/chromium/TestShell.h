@@ -59,6 +59,7 @@ class WebURL;
 class DRTDevToolsAgent;
 class DRTDevToolsCallArgs;
 class DRTDevToolsClient;
+class MockWebPrerenderingSupport;
 class WebPermissions;
 
 struct TestParams {
@@ -95,7 +96,9 @@ public:
     EventSender* eventSender() const { return m_eventSender.get(); }
     AccessibilityController* accessibilityController() const { return m_accessibilityController.get(); }
     GamepadController* gamepadController() const { return m_gamepadController.get(); }
+#if ENABLE(NOTIFICATIONS)
     NotificationPresenter* notificationPresenter() const { return m_notificationPresenter.get(); }
+#endif
     TestEventPrinter* printer() const { return m_printer.get(); }
 
     WebPreferences* preferences() { return &m_prefs; }
@@ -139,7 +142,7 @@ public:
     void setAccelerated2dCanvasEnabled(bool enabled) { m_accelerated2dCanvasEnabled = enabled; }
     void setDeferred2dCanvasEnabled(bool enabled) { m_deferred2dCanvasEnabled = enabled; }
     void setAcceleratedPaintingEnabled(bool enabled) { m_acceleratedPaintingEnabled = enabled; }
-    void setPerTilePaintingEnabled(bool enabled) { m_perTilePaintingEnabled = enabled; }
+    void setPerTilePaintingEnabled(bool);
 #if defined(OS_WIN)
     // Access to the finished event. Used by the static WatchDog thread.
     HANDLE finishedEvent() { return m_finishedEvent; }
@@ -217,9 +220,14 @@ private:
     OwnPtr<EventSender> m_eventSender;
     OwnPtr<LayoutTestController> m_layoutTestController;
     OwnPtr<TextInputController> m_textInputController;
+#if ENABLE(NOTIFICATIONS) || ENABLE(LEGACY_NOTIFICATIONS)
     OwnPtr<NotificationPresenter> m_notificationPresenter;
+#endif
     OwnPtr<WebViewHost> m_webViewHost;
     OwnPtr<WebKit::WebThread> m_webCompositorThread;
+#if ENABLE(LINK_PRERENDER)
+    OwnPtr<MockWebPrerenderingSupport> m_prerenderingSupport;
+#endif
 
     TestParams m_params;
     int m_timeout; // timeout value in millisecond

@@ -90,6 +90,7 @@ LIST(APPEND WebCore_SOURCES
 LIST(APPEND WebCore_SOURCES
     platform/network/MIMESniffing.cpp
     platform/network/ProxyServer.cpp
+    platform/network/blackberry/AutofillBackingStore.cpp
     platform/network/blackberry/DeferredData.cpp
     platform/network/blackberry/NetworkJob.cpp
     platform/network/blackberry/NetworkManager.cpp
@@ -227,6 +228,13 @@ if (ENABLE_WEBGL)
     )
 ENDIF ()
 
+if (ENABLE_MEDIA_STREAM)
+    LIST(APPEND WebCore_SOURCES
+        platform/mediastream/blackberry/DeprecatedPeerConnectionHandler.cpp
+        platform/mediastream/blackberry/MediaStreamCenterBlackBerry.cpp
+    )
+ENDIF ()
+
 IF (ENABLE_NETSCAPE_PLUGIN_API)
     LIST(APPEND WebCore_SOURCES
         plugins/PluginDatabase.cpp
@@ -341,3 +349,18 @@ FOREACH (_file ${WebCore_CPP_IDL_FILES})
         VERBATIM)
     LIST(APPEND WebCore_SOURCES ${DERIVED_SOURCES_WEBCORE_DIR}/WebDOM${_name}.cpp)
 ENDFOREACH ()
+
+# Generate contents for PopupPicker.cpp
+SET(WebCore_POPUP_CSS_AND_JS
+    ${WEBCORE_DIR}/Resources/blackberry/popupControlBlackBerry.css
+    ${WEBCORE_DIR}/Resources/blackberry/selectControlBlackBerry.css
+    ${WEBCORE_DIR}/Resources/blackberry/selectControlBlackBerry.js
+)
+
+ADD_CUSTOM_COMMAND(
+    OUTPUT ${DERIVED_SOURCES_WEBCORE_DIR}/PopupPicker.h ${DERIVED_SOURCES_WEBCORE_DIR}/PopupPicker.cpp
+    MAIN_DEPENDENCY ${WEBCORE_DIR}/make-file-arrays.py
+    DEPENDS ${WebCore_POPUP_CSS_AND_JS}
+    COMMAND ${PYTHON_EXECUTABLE} ${WEBCORE_DIR}/make-file-arrays.py --out-h=${DERIVED_SOURCES_WEBCORE_DIR}/PopupPicker.h --out-cpp=${DERIVED_SOURCES_WEBCORE_DIR}/PopupPicker.cpp ${WebCore_POPUP_CSS_AND_JS}
+)
+LIST(APPEND WebCore_SOURCES ${DERIVED_SOURCES_WEBCORE_DIR}/PopupPicker.cpp)

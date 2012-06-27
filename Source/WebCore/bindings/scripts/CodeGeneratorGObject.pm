@@ -179,6 +179,8 @@ sub SkipAttribute {
         return 1;
     }
 
+    $codeGenerator->AssertNotSequenceType($propType);
+
     if ($codeGenerator->GetArrayType($propType)) {
         return 1;
     }
@@ -195,6 +197,11 @@ sub SkipAttribute {
 
     # This is for DOMWindow.idl Crypto attribute
     if ($attribute->signature->type eq "Crypto") {
+        return 1;
+    }
+
+    # Skip indexed database attributes for now, they aren't yet supported for the GObject generator.
+    if ($attribute->signature->name =~ /^webkitIndexedDB/ or $attribute->signature->name =~ /^webkitIDB/) {
         return 1;
     }
 
@@ -230,7 +237,7 @@ sub SkipFunction {
         return 1;
     }
 
-    if ($codeGenerator->GetArrayType($functionReturnType)) {
+    if ($codeGenerator->GetSequenceType($functionReturnType)) {
         return 1;
     }
 
@@ -241,7 +248,7 @@ sub SkipFunction {
     foreach my $param (@{$function->parameters}) {
         if ($param->extendedAttributes->{"Callback"} ||
             $param->type eq "MediaQueryListListener" ||
-            $codeGenerator->GetArrayType($param->type)) {
+            $codeGenerator->GetSequenceType($param->type)) {
             return 1;
         }
     }
@@ -558,8 +565,10 @@ EOF
     push(@txtGetProps, $txtGetProp);
     if (scalar @readableProperties > 0) {
         $txtGetProp = << "EOF";
+$conditionGuardStart
     ${className}* self = WEBKIT_DOM_${clsCaps}(object);
     $privFunction
+$conditionGuardEnd
 EOF
         push(@txtGetProps, $txtGetProp);
     }
@@ -580,8 +589,10 @@ EOF
 
     if (scalar @writeableProperties > 0) {
         $txtSetProps = << "EOF";
+$conditionGuardStart
     ${className}* self = WEBKIT_DOM_${clsCaps}(object);
     $privFunction
+$conditionGuardEnd
 EOF
         push(@txtSetProps, $txtSetProps);
     }

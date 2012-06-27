@@ -136,6 +136,7 @@ def unit_test_list():
               expected_text="foo\r\r\r\n", actual_text="foo\n")
     tests.add('failures/expected/text.html', actual_text='text_fail-png')
     tests.add('failures/expected/skip_text.html', actual_text='text diff')
+    tests.add('failures/flaky/text.html')
     tests.add('failures/unexpected/missing_text.html', expected_text=None)
     tests.add('failures/unexpected/missing_image.html', expected_image=None)
     tests.add('failures/unexpected/missing_render_tree_dump.html', actual_text="""layer at (0,0) size 800x600
@@ -173,6 +174,7 @@ layer at (0,0) size 800x34
     tests.add('passes/checksum_in_image.html',
               expected_checksum=None,
               expected_image='tEXtchecksum\x00checksum_in_image-checksum')
+    tests.add('passes/skipped/skip.html')
 
     # Note that here the checksums don't match but the images do, so this test passes "unexpectedly".
     # See https://bugs.webkit.org/show_bug.cgi?id=69444 .
@@ -221,6 +223,10 @@ layer at (0,0) size 800x34
     tests.add('platform/test-snow-leopard/http/test.html')
     tests.add('platform/test-snow-leopard/websocket/test.html')
 
+    # For testing if perf tests are running in a locked shard.
+    tests.add('perf/foo/test.html')
+    tests.add('perf/foo/test-ref.html')
+
     return tests
 
 
@@ -228,12 +234,8 @@ layer at (0,0) size 800x34
 # this works. The path contains a '.' in the name because we've seen bugs
 # related to this before.
 
-if sys.platform == 'win32':
-    LAYOUT_TEST_DIR = 'c:/test.checkout/LayoutTests'
-    PERF_TEST_DIR = 'c:/test.checkout/PerformanceTests'
-else:
-    LAYOUT_TEST_DIR = '/test.checkout/LayoutTests'
-    PERF_TEST_DIR = '/test.checkout/PerformanceTests'
+LAYOUT_TEST_DIR = '/test.checkout/LayoutTests'
+PERF_TEST_DIR = '/test.checkout/PerformanceTests'
 
 
 # Here we synthesize an in-memory filesystem from the test list
@@ -242,8 +244,8 @@ else:
 def add_unit_tests_to_mock_filesystem(filesystem):
     # Add the test_expectations file.
     filesystem.maybe_make_directory(LAYOUT_TEST_DIR + '/platform/test')
-    if not filesystem.exists(LAYOUT_TEST_DIR + '/platform/test/test_expectations.txt'):
-        filesystem.write_text_file(LAYOUT_TEST_DIR + '/platform/test/test_expectations.txt', """
+    if not filesystem.exists(LAYOUT_TEST_DIR + '/platform/test/TestExpectations'):
+        filesystem.write_text_file(LAYOUT_TEST_DIR + '/platform/test/TestExpectations', """
 WONTFIX : failures/expected/crash.html = CRASH
 WONTFIX : failures/expected/image.html = IMAGE
 WONTFIX : failures/expected/audio.html = AUDIO
@@ -262,6 +264,7 @@ WONTFIX : failures/expected/timeout.html = TIMEOUT
 WONTFIX SKIP : failures/expected/hang.html = TIMEOUT
 WONTFIX SKIP : failures/expected/keyboard.html = CRASH
 WONTFIX SKIP : failures/expected/exception.html = CRASH
+WONTFIX SKIP : passes/skipped/skip.html = PASS
 """)
 
     filesystem.maybe_make_directory(LAYOUT_TEST_DIR + '/reftests/foo')
@@ -317,9 +320,9 @@ class TestPort(Port):
 
     """Test implementation of the Port interface."""
     ALL_BASELINE_VARIANTS = (
-        'test-mac-snowleopard', 'test-mac-leopard',
-        'test-win-win7', 'test-win-vista', 'test-win-xp',
         'test-linux-x86_64',
+        'test-mac-snowleopard', 'test-mac-leopard',
+        'test-win-vista', 'test-win-win7', 'test-win-xp',
     )
 
     @classmethod
@@ -334,7 +337,8 @@ class TestPort(Port):
         port_name = port_name or 'test-mac-leopard'
         Port.__init__(self, host, port_name, **kwargs)
         self._tests = unit_test_list()
-        self._expectations_path = LAYOUT_TEST_DIR + '/platform/test/test_expectations.txt'
+        self._flakes = set()
+        self._expectations_path = LAYOUT_TEST_DIR + '/platform/test/TestExpectations'
         self._results_directory = None
 
         self._operating_system = 'mac'
@@ -424,7 +428,7 @@ class TestPort(Port):
     def _driver_class(self):
         return TestDriver
 
-    def start_http_server(self):
+    def start_http_server(self, additional_dirs=None, number_of_servers=None):
         pass
 
     def start_websocket_server(self):
@@ -450,6 +454,12 @@ class TestPort(Port):
 
     def _path_to_lighttpd_php(self):
         return "/usr/bin/php-cgi"
+
+    def _path_to_apache(self):
+        return "/usr/sbin/httpd"
+
+    def _path_to_apache_config_file(self):
+        return self._filesystem.join(self.layout_tests_dir(), 'http', 'conf', 'httpd.conf')
 
     def path_to_test_expectations_file(self):
         return self._expectations_path
@@ -513,6 +523,11 @@ class TestDriver(Driver):
 
         audio = None
         actual_text = test.actual_text
+
+        if 'flaky' in test_name and not test_name in self._port._flakes:
+            self._port._flakes.add(test_name)
+            actual_text = 'flaky text failure'
+
         if actual_text and test_args and test_name == 'passes/args.html':
             actual_text = actual_text + ' ' + ' '.join(test_args)
 
@@ -529,7 +544,7 @@ class TestDriver(Driver):
 
         crash_log = ''
         if crashed_process_name:
-            crash_logs = CrashLogs(self._port._filesystem)
+            crash_logs = CrashLogs(self._port.host)
             crash_log = crash_logs.find_newest_log(crashed_process_name, None) or ''
 
         return DriverOutput(actual_text, test.actual_image, test.actual_checksum, audio,

@@ -232,7 +232,12 @@ float Length::nonNanCalculatedValue(int maxValue) const
     return result;
 }
 
-class SameSizeAsLength {
+bool Length::isCalculatedEqual(const Length& o) const
+{
+    return isCalculated() && (calculationValue() == o.calculationValue() || *calculationValue() == *o.calculationValue());
+}
+
+struct SameSizeAsLength {
     int32_t value;
     int32_t metaData;
 };

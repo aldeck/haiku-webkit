@@ -84,9 +84,11 @@ GraphicsContext* ImageBuffer::context() const
 
 PassRefPtr<Image> ImageBuffer::copyImage(BackingStoreCopy copyBehavior) const
 {
-    ASSERT(copyBehavior == CopyBackingStore);
+    if (copyBehavior == CopyBackingStore)
+        return BitmapImage::create(copyCairoImageSurface(m_data.m_surface).leakRef());
+
     // BitmapImage will release the passed in surface on destruction
-    return BitmapImage::create(copyCairoImageSurface(m_data.m_surface).leakRef());
+    return BitmapImage::create(cairo_surface_reference(m_data.m_surface));
 }
 
 void ImageBuffer::clip(GraphicsContext* context, const FloatRect& maskRect) const
@@ -97,16 +99,14 @@ void ImageBuffer::clip(GraphicsContext* context, const FloatRect& maskRect) cons
 void ImageBuffer::draw(GraphicsContext* context, ColorSpace styleColorSpace, const FloatRect& destRect, const FloatRect& srcRect,
                        CompositeOperator op , bool useLowQualityScale)
 {
-    // BitmapImage will release the passed in surface on destruction
-    RefPtr<Image> image = BitmapImage::create(cairo_surface_reference(m_data.m_surface));
+    RefPtr<Image> image = copyImage(DontCopyBackingStore);
     context->drawImage(image.get(), styleColorSpace, destRect, srcRect, op, DoNotRespectImageOrientation, useLowQualityScale);
 }
 
 void ImageBuffer::drawPattern(GraphicsContext* context, const FloatRect& srcRect, const AffineTransform& patternTransform,
                               const FloatPoint& phase, ColorSpace styleColorSpace, CompositeOperator op, const FloatRect& destRect)
 {
-    // BitmapImage will release the passed in surface on destruction
-    RefPtr<Image> image = BitmapImage::create(cairo_surface_reference(m_data.m_surface));
+    RefPtr<Image> image = copyImage(DontCopyBackingStore);
     image->drawPattern(context, srcRect, patternTransform, phase, styleColorSpace, op, destRect);
 }
 
@@ -241,10 +241,10 @@ void ImageBuffer::putByteArray(Multiply multiplied, Uint8ClampedArray* source, c
         for (int x = 0; x < numColumns; x++) {
             int basex = x * 4;
             unsigned* pixel = row + x + destx;
-            Color pixelColor(srcRows[basex],
-                    srcRows[basex + 1],
-                    srcRows[basex + 2],
-                    srcRows[basex + 3]);
+            Color pixelColor = Color::createUnCheked(srcRows[basex],
+                                                     srcRows[basex + 1],
+                                                     srcRows[basex + 2],
+                                                     srcRows[basex + 3]);
             if (multiplied == Unmultiplied)
                 *pixel = premultipliedARGBFromColor(pixelColor);
             else

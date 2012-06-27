@@ -25,6 +25,7 @@
 #include "RenderSVGForeignObject.h"
 
 #include "GraphicsContext.h"
+#include "HitTestResult.h"
 #include "LayoutRepainter.h"
 #include "RenderObject.h"
 #include "RenderSVGResource.h"
@@ -177,20 +178,26 @@ bool RenderSVGForeignObject::nodeAtFloatPoint(const HitTestRequest& request, Hit
         return false;
 
     // FOs establish a stacking context, so we need to hit-test all layers.
-    return RenderBlock::nodeAtPoint(request, result, roundedLayoutPoint(localPoint), LayoutPoint(), HitTestForeground)
-        || RenderBlock::nodeAtPoint(request, result, roundedLayoutPoint(localPoint), LayoutPoint(), HitTestFloat)
-        || RenderBlock::nodeAtPoint(request, result, roundedLayoutPoint(localPoint), LayoutPoint(), HitTestChildBlockBackgrounds);
+    HitTestPoint hitTestPoint(roundedLayoutPoint(localPoint));
+    return RenderBlock::nodeAtPoint(request, result, hitTestPoint, LayoutPoint(), HitTestForeground)
+        || RenderBlock::nodeAtPoint(request, result, hitTestPoint, LayoutPoint(), HitTestFloat)
+        || RenderBlock::nodeAtPoint(request, result, hitTestPoint, LayoutPoint(), HitTestChildBlockBackgrounds);
 }
 
-bool RenderSVGForeignObject::nodeAtPoint(const HitTestRequest&, HitTestResult&, const LayoutPoint&, const LayoutPoint&, HitTestAction)
+bool RenderSVGForeignObject::nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestPoint&, const LayoutPoint&, HitTestAction)
 {
     ASSERT_NOT_REACHED();
     return false;
 }
 
-void RenderSVGForeignObject::mapLocalToContainer(RenderBoxModelObject* repaintContainer, bool /* fixed */, bool /* useTransforms */, TransformState& transformState, bool* wasFixed) const
+void RenderSVGForeignObject::mapLocalToContainer(RenderBoxModelObject* repaintContainer, bool /* fixed */, bool /* useTransforms */, TransformState& transformState, ApplyContainerFlipOrNot, bool* wasFixed) const
 {
     SVGRenderSupport::mapLocalToContainer(this, repaintContainer, transformState, wasFixed);
+}
+
+const RenderObject* RenderSVGForeignObject::pushMappingToContainer(const RenderBoxModelObject* ancestorToStopAt, RenderGeometryMap& geometryMap) const
+{
+    return SVGRenderSupport::pushMappingToContainer(this, ancestorToStopAt, geometryMap);
 }
 
 }

@@ -36,11 +36,21 @@ function removeContainerLines(text) {
 }
 
 function check() {
-    var refContainerRenderTree = internals.elementRenderTreeAsText(document.getElementById('expect-container'));
+    var expectContainer = document.getElementById('expect-container');
+    var actualContainer = document.getElementById('actual-container');
+    var originalDisplayValue = actualContainer.style.display;
+    actualContainer.style.display = 'none';
+    expectContainer.offsetLeft;
+    var refContainerRenderTree = internals.elementRenderTreeAsText(expectContainer);
     var refRenderTree = removeContainerLines(refContainerRenderTree);
+    actualContainer.style.display = originalDisplayValue;
 
-    var targetContainerRenderTree = internals.elementRenderTreeAsText(document.getElementById('actual-container'));
+    originalDisplayValue = expectContainer.style.display;
+    expectContainer.style.display = 'none';
+    actualContainer.offsetLeft;
+    var targetContainerRenderTree = internals.elementRenderTreeAsText(actualContainer);
     var targetRenderTree = removeContainerLines(targetContainerRenderTree);
+    expectContainer.style.display = originalDisplayValue;
 
     if (targetRenderTree == refRenderTree)
         log("PASS");
@@ -130,7 +140,7 @@ function doneTest() {
     log("TEST COMPLETED");
     if (window.tearDownOnce)
         window.tearDownOnce();
-    layoutTestController.notifyDone();
+    testRunner.notifyDone();
 }
 
 // A test driver. Call this body.onload.
@@ -138,9 +148,9 @@ function doTest(tests) {
     if (window.setUpOnce)
         window.setUpOnce();
 
-    if (window.layoutTestController) {
-        layoutTestController.waitUntilDone();
-        layoutTestController.dumpAsText();
+    if (window.testRunner) {
+        testRunner.waitUntilDone();
+        testRunner.dumpAsText();
     }
 
     cleanUp();

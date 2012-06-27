@@ -83,6 +83,7 @@ struct WebPreferences {
     bool developerExtrasEnabled;
     bool experimentalWebGLEnabled;
     bool experimentalCSSRegionsEnabled;
+    bool experimentalCSSGridLayoutEnabled;
     bool javaEnabled;
     bool javaScriptCanAccessClipboard;
     bool javaScriptCanOpenWindowsAutomatically;
@@ -109,7 +110,7 @@ struct WebPreferences {
     bool deferred2dCanvasEnabled;
     bool acceleratedPaintingEnabled;
     bool hixie76WebSocketProtocolEnabled;
-    bool perTilePaintingEnabled;
+    bool mediaPlaybackRequiresUserGesture;
     bool mockScrollbarsEnabled;
     bool cssCustomFilterEnabled;
 

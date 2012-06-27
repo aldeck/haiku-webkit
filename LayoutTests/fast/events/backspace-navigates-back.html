@@ -5,7 +5,7 @@ function expect(test, msg) {
         return true;
 
     log.innerText = 'FAIL: expected ' + msg;
-    layoutTestController.notifyDone();
+    testRunner.notifyDone();
     return false;
 }
 
@@ -37,7 +37,7 @@ function doStep(step, location) {
         if (!expect(location == 'test-mac', 'navigation to test-mac'))
             return;
 
-        layoutTestController.setEditingBehavior('mac');
+        internals.settings.setEditingBehavior('mac');
         testBackspaceNavigatesBack();
 
         break;
@@ -50,7 +50,7 @@ function doStep(step, location) {
         if (!expect(location == 'test-win', 'navigation to test-win'))
             return;
 
-        layoutTestController.setEditingBehavior('win');
+        internals.settings.setEditingBehavior('win');
         testBackspaceNavigatesBack();
 
         break;
@@ -64,7 +64,7 @@ function doStep(step, location) {
             return;
 
         // Test unix behavior: that backspace does not go back.
-        layoutTestController.setEditingBehavior('unix');
+        internals.settings.setEditingBehavior('unix');
 
         // We expect backspace to *not* navigate.
         // Start a navigation to the success page; if backspace causes us to go back,
@@ -79,22 +79,22 @@ function doStep(step, location) {
             return;
         log.innerText += 'PASS: test complete';
         sessionStorage.removeItem('step');
-        layoutTestController.notifyDone();
+        testRunner.notifyDone();
     }
 }
 
 window.onpageshow = function() {
-    if (!window.layoutTestController || !window.eventSender) {
+    if (!window.testRunner || !window.eventSender || !window.internals) {
         log.innerText =
-            'This test requires eventSender and layoutTestController. ' +
+            'This test requires eventSender, testRunner and window.internals. ' +
             'It cannot be run manually.';
         return;
     }
     if (!location.search) {
         sessionStorage.step = 0;
-        layoutTestController.dumpAsText();
-        layoutTestController.clearBackForwardList();
-        layoutTestController.waitUntilDone();
+        testRunner.dumpAsText();
+        testRunner.clearBackForwardList();
+        testRunner.waitUntilDone();
     }
 
     setTimeout(function() {

@@ -26,24 +26,26 @@
 #include "config.h"
 #include "BlockAllocator.h"
 
-#include "MarkedBlock.h"
 #include <wtf/CurrentTime.h>
 
 namespace JSC {
 
 BlockAllocator::BlockAllocator()
     : m_numberOfFreeBlocks(0)
+    , m_isCurrentlyAllocating(false)
     , m_blockFreeingThreadShouldQuit(false)
     , m_blockFreeingThread(createThread(blockFreeingThreadStartFunc, this, "JavaScriptCore::BlockFree"))
 {
     ASSERT(m_blockFreeingThread);
+    m_freeBlockLock.Init();
 }
 
 BlockAllocator::~BlockAllocator()
 {
     releaseFreeBlocks();
     {
-        MutexLocker locker(m_freeBlockLock);
+        MutexLocker locker(m_freeBlockConditionLock);
+
         m_blockFreeingThreadShouldQuit = true;
         m_freeBlockCondition.broadcast();
     }
@@ -53,14 +55,13 @@ BlockAllocator::~BlockAllocator()
 void BlockAllocator::releaseFreeBlocks()
 {
     while (true) {
-        MarkedBlock* block;
+        HeapBlock* block;
         {
-            MutexLocker locker(m_freeBlockLock);
+            SpinLockHolder locker(&m_freeBlockLock);
             if (!m_numberOfFreeBlocks)
                 block = 0;
             else {
-                // FIXME: How do we know this is a MarkedBlock? It could be a CopiedBlock.
-                block = static_cast<MarkedBlock*>(m_freeBlocks.removeHead());
+                block = m_freeBlocks.removeHead();
                 ASSERT(block);
                 m_numberOfFreeBlocks--;
             }
@@ -68,8 +69,8 @@ void BlockAllocator::releaseFreeBlocks()
         
         if (!block)
             break;
-        
-        MarkedBlock::destroy(block);
+
+        block->m_allocation.deallocate();
     }
 }
 
@@ -77,7 +78,8 @@ void BlockAllocator::waitForRelativeTimeWhileHoldingLock(double relative)
 {
     if (m_blockFreeingThreadShouldQuit)
         return;
-    m_freeBlockCondition.timedWait(m_freeBlockLock, currentTime() + relative);
+
+    m_freeBlockCondition.timedWait(m_freeBlockConditionLock, currentTime() + relative);
 }
 
 void BlockAllocator::waitForRelativeTime(double relative)
@@ -86,7 +88,7 @@ void BlockAllocator::waitForRelativeTime(double relative)
     // frequently. It would only be a bug if this function failed to return
     // when it was asked to do so.
     
-    MutexLocker locker(m_freeBlockLock);
+    MutexLocker locker(m_freeBlockConditionLock);
     waitForRelativeTimeWhileHoldingLock(relative);
 }
 
@@ -104,6 +106,11 @@ void BlockAllocator::blockFreeingThreadMain()
         if (m_blockFreeingThreadShouldQuit)
             break;
         
+        if (m_isCurrentlyAllocating) {
+            m_isCurrentlyAllocating = false;
+            continue;
+        }
+
         // Now process the list of free blocks. Keep freeing until half of the
         // blocks that are currently on the list are gone. Assume that a size_t
         // field can be accessed atomically.
@@ -114,14 +121,13 @@ void BlockAllocator::blockFreeingThreadMain()
         size_t desiredNumberOfFreeBlocks = currentNumberOfFreeBlocks / 2;
         
         while (!m_blockFreeingThreadShouldQuit) {
-            MarkedBlock* block;
+            HeapBlock* block;
             {
-                MutexLocker locker(m_freeBlockLock);
+                SpinLockHolder locker(&m_freeBlockLock);
                 if (m_numberOfFreeBlocks <= desiredNumberOfFreeBlocks)
                     block = 0;
                 else {
-                    // FIXME: How do we know this is a MarkedBlock? It could be a CopiedBlock.
-                    block = static_cast<MarkedBlock*>(m_freeBlocks.removeHead());
+                    block = m_freeBlocks.removeHead();
                     ASSERT(block);
                     m_numberOfFreeBlocks--;
                 }
@@ -130,7 +136,7 @@ void BlockAllocator::blockFreeingThreadMain()
             if (!block)
                 break;
             
-            MarkedBlock::destroy(block);
+            block->m_allocation.deallocate();
         }
     }
 }

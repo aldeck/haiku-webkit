@@ -35,9 +35,8 @@ public:
     TouchEventHandler(WebPagePrivate* webpage);
     ~TouchEventHandler();
 
-    bool handleTouchPoint(Platform::TouchPoint&);
+    bool handleTouchPoint(Platform::TouchPoint&, bool useFatFingers);
     void touchEventCancel();
-    void touchEventCancelAndClearFocusedNode();
     void touchHoldEvent();
 
     bool shouldSuppressMouseDownOnTouchDown() const;

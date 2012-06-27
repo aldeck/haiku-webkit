@@ -47,7 +47,7 @@
 #include "npruntime_internal.h"
 #endif
 
-#if OS(WINDOWS) && (PLATFORM(QT) || PLATFORM(WX))
+#if OS(WINDOWS) && (PLATFORM(GTK) || PLATFORM(QT) || PLATFORM(WX))
 typedef struct HWND__* HWND;
 typedef HWND PlatformPluginWidget;
 #else
@@ -84,9 +84,9 @@ namespace JSC {
 #endif
 
 namespace WebCore {
-    class Element;
     class Frame;
     class Image;
+    class HTMLPlugInElement;
     class KeyboardEvent;
     class MouseEvent;
     class KURL;
@@ -141,7 +141,7 @@ namespace WebCore {
                      , public PluginManualLoader
                      , private MediaCanStartListener {
     public:
-        static PassRefPtr<PluginView> create(Frame* parentFrame, const IntSize&, Element*, const KURL&, const Vector<String>& paramNames, const Vector<String>& paramValues, const String& mimeType, bool loadManually);
+        static PassRefPtr<PluginView> create(Frame* parentFrame, const IntSize&, HTMLPlugInElement*, const KURL&, const Vector<String>& paramNames, const Vector<String>& paramValues, const String& mimeType, bool loadManually);
         virtual ~PluginView();
 
         PluginPackage* plugin() const { return m_plugin.get(); }
@@ -265,7 +265,7 @@ namespace WebCore {
 #endif
 
     private:
-        PluginView(Frame* parentFrame, const IntSize&, PluginPackage*, Element*, const KURL&, const Vector<String>& paramNames, const Vector<String>& paramValues, const String& mimeType, bool loadManually);
+        PluginView(Frame* parentFrame, const IntSize&, PluginPackage*, HTMLPlugInElement*, const KURL&, const Vector<String>& paramNames, const Vector<String>& paramValues, const String& mimeType, bool loadManually);
 
         void setParameters(const Vector<String>& paramNames, const Vector<String>& paramValues);
         bool startOrAddToUnstartedList();
@@ -299,7 +299,7 @@ namespace WebCore {
 
         RefPtr<Frame> m_parentFrame;
         RefPtr<PluginPackage> m_plugin;
-        Element* m_element;
+        HTMLPlugInElement* m_element;
         bool m_isStarted;
         KURL m_url;
         PluginStatus m_status;
@@ -376,7 +376,7 @@ namespace WebCore {
         bool m_haveUpdatedPluginWidget;
 #endif
 
-#if ((PLATFORM(QT) || PLATFORM(WX)) && OS(WINDOWS)) || defined(XP_MACOSX) || PLATFORM(EFL)
+#if ((PLATFORM(GTK) || PLATFORM(QT) || PLATFORM(WX)) && OS(WINDOWS)) || defined(XP_MACOSX) || PLATFORM(EFL)
         // On Mac OSX and Qt/Windows the plugin does not have its own native widget,
         // but is using the containing window as its reference for positioning/painting.
         PlatformPluginWidget m_window;
@@ -426,6 +426,7 @@ private:
         static bool s_isRunningUnderDRT;
         static void setXKeyEventSpecificFields(XEvent*, KeyboardEvent*);
         void paintUsingXPixmap(QPainter* painter, const QRect &exposedRect);
+        QWebPageClient* platformPageClient() const;
 #endif
 #if USE(ACCELERATED_COMPOSITING_PLUGIN_LAYER)
         OwnPtr<PlatformLayer> m_platformLayer;

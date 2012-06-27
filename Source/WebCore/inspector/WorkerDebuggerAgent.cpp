@@ -67,12 +67,12 @@ public:
     {
         // Process all queued debugger commands. It is safe to use m_workerContext here
         // because it is alive if RunWorkerLoop is not terminated, otherwise it will
-        // just be ignored.
+        // just be ignored. WorkerThread is certainly alive if this task is being executed.
         while (MessageQueueMessageReceived == m_thread->runLoop().runInMode(m_workerContext, WorkerDebuggerAgent::debuggerTaskMode, WorkerRunLoop::DontWaitForMessage)) { }
     }
 
 private:
-    RefPtr<WorkerThread> m_thread;
+    WorkerThread* m_thread;
     WorkerContext* m_workerContext;
 };
 
@@ -122,6 +122,16 @@ void WorkerDebuggerAgent::stopListeningScriptDebugServer()
 WorkerScriptDebugServer& WorkerDebuggerAgent::scriptDebugServer()
 {
     return m_scriptDebugServer;
+}
+
+InjectedScript WorkerDebuggerAgent::injectedScriptForEval(ErrorString* error, const int* executionContextId)
+{
+    if (executionContextId) {
+        *error = "Execution context id is not supported for workers as there is only one execution context.";
+        return InjectedScript();
+    }
+    ScriptState* scriptState = scriptStateFromWorkerContext(m_inspectedWorkerContext);
+    return injectedScriptManager()->injectedScriptFor(scriptState);
 }
 
 void WorkerDebuggerAgent::muteConsole()

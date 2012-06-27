@@ -29,15 +29,17 @@
 
 #include "cc/CCTiledLayerImpl.h"
 
-#include "LayerRendererChromium.h"
+#include "TextStream.h"
 #include "cc/CCCheckerboardDrawQuad.h"
 #include "cc/CCDebugBorderDrawQuad.h"
+#include "cc/CCLayerTilingData.h"
 #include "cc/CCQuadCuller.h"
 #include "cc/CCSolidColorDrawQuad.h"
 #include "cc/CCTileDrawQuad.h"
 #include <wtf/text/WTFString.h>
 
 using namespace std;
+using WebKit::WebTransformationMatrix;
 
 namespace WebCore {
 
@@ -77,7 +79,7 @@ CCTiledLayerImpl::~CCTiledLayerImpl()
 {
 }
 
-void CCTiledLayerImpl::bindContentsTexture(LayerRendererChromium* layerRenderer)
+unsigned CCTiledLayerImpl::contentsTextureId() const
 {
     // This function is only valid for single texture layers, e.g. masks.
     ASSERT(m_tiler);
@@ -88,7 +90,7 @@ void CCTiledLayerImpl::bindContentsTexture(LayerRendererChromium* layerRenderer)
     Platform3DObject textureId = tile ? tile->textureId() : 0;
     ASSERT(textureId);
 
-    layerRenderer->context()->bindTexture(GraphicsContext3D::TEXTURE_2D, textureId);
+    return textureId;
 }
 
 void CCTiledLayerImpl::dumpLayerProperties(TextStream& ts, int indent) const
@@ -121,9 +123,9 @@ DrawableTile* CCTiledLayerImpl::createTile(int i, int j)
     return addedTile;
 }
 
-TransformationMatrix CCTiledLayerImpl::quadTransform() const
+WebTransformationMatrix CCTiledLayerImpl::quadTransform() const
 {
-    TransformationMatrix transform = drawTransform();
+    WebTransformationMatrix transform = drawTransform();
 
     if (contentBounds().isEmpty())
         return transform;

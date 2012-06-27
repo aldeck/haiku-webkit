@@ -84,7 +84,6 @@ public:
     virtual void dispatchOnInspectorBackend(const WebString& message);
     virtual void inspectElementAt(const WebPoint& point);
     virtual void evaluateInWebInspector(long callId, const WebString& script);
-    virtual void setJavaScriptProfilingEnabled(bool);
     virtual void setProcessId(long);
 
     // InspectorClient implementation.
@@ -95,6 +94,7 @@ public:
     virtual void bringFrontendToFront();
     virtual void highlight();
     virtual void hideHighlight();
+    virtual bool supportsInspectorStateUpdates() const { return true; }
     virtual void updateInspectorStateCookie(const WTF::String&);
     virtual bool sendMessageToFrontend(const WTF::String&);
 

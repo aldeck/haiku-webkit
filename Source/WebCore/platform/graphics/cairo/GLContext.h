@@ -30,16 +30,17 @@ namespace WebCore {
 class GLContext {
     WTF_MAKE_NONCOPYABLE(GLContext);
 public:
-    static GLContext* getContextForWidget(PlatformWidget);
-    static GLContext* createOffscreenContext(GLContext* sharing = 0);
+    static PassOwnPtr<GLContext> createContextForWindow(uint64_t windowHandle, GLContext* sharingContext);
+    static PassOwnPtr<GLContext> createOffscreenContext(GLContext* sharing = 0);
     static GLContext* getCurrent();
+    static GLContext* sharingContext();
 
     GLContext();
     virtual ~GLContext();
-    virtual GLContext* createOffscreenSharingContext() = 0;
     virtual bool makeContextCurrent();
     virtual void swapBuffers() = 0;
     virtual bool canRenderToDefaultFramebuffer() = 0;
+    virtual IntSize defaultFrameBufferSize() = 0;
 
 #if ENABLE(WEBGL)
     virtual PlatformGraphicsContext3D platformContext() = 0;

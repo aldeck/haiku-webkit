@@ -56,7 +56,7 @@ public:
     bool callShouldCloseOnWebView();
     JSStringRef copyDecodedHostName(JSStringRef name);
     JSStringRef copyEncodedHostName(JSStringRef name);
-    JSRetainPtr<JSStringRef> counterValueForElementById(JSStringRef id);
+    void deliverWebIntent(JSStringRef action, JSStringRef type, JSStringRef data);
     void disableImageLoading();
     void dispatchPendingLoadRequests();
     void display();
@@ -76,7 +76,6 @@ public:
     int pageNumberForElementById(JSStringRef id, float pageWidthInPixels, float pageHeightInPixels);
     JSRetainPtr<JSStringRef> pageProperty(const char* propertyName, int pageNumber) const;
     JSRetainPtr<JSStringRef> pageSizeAndMarginsInPixels(int pageNumber, int width, int height, int marginTop, int marginRight, int marginBottom, int marginLeft) const;
-    bool isPageBoxVisible(int pageNumber) const;
     JSStringRef pathToLocalResource(JSContextRef, JSStringRef url);
     void queueBackNavigation(int howFarBackward);
     void queueForwardNavigation(int howFarForward);
@@ -87,6 +86,7 @@ public:
     void queueNonLoadingScript(JSStringRef script);
     void queueReload();
     void removeAllVisitedLinks();
+    void sendWebIntentResponse(JSStringRef response);
     void setAcceptsEditing(bool acceptsEditing);
     void setAllowUniversalAccessFromFileURLs(bool);
     void setAllowFileAccessFromFileURLs(bool);
@@ -100,8 +100,8 @@ public:
     void setDomainRelaxationForbiddenForURLScheme(bool forbidden, JSStringRef scheme);
     void setDefersLoading(bool);
     void setIconDatabaseEnabled(bool iconDatabaseEnabled);
-    void setJavaScriptProfilingEnabled(bool profilingEnabled);
     void setJavaScriptCanAccessClipboard(bool flag);
+    void setAutomaticLinkDetectionEnabled(bool flag);
     void setMainFrameIsFirstResponder(bool flag);
     void setMockDeviceOrientation(bool canProvideAlpha, double alpha, bool canProvideBeta, double beta, bool canProvideGamma, double gamma);
     void setMockGeolocationError(int code, JSStringRef message);
@@ -124,11 +124,9 @@ public:
     void setFrameFlatteningEnabled(bool enable);
     void setSpatialNavigationEnabled(bool enable);
     void setScrollbarPolicy(JSStringRef orientation, JSStringRef policy);
-    void setEditingBehavior(const char* editingBehavior);
     void startSpeechInput(JSContextRef inputElement);
-
-    void setPageVisibility(const char* visibility) { }
-    void resetPageVisibility() { }
+    void setPageVisibility(const char*);
+    void resetPageVisibility();
 
     void waitForPolicyDelegate();
     size_t webHistoryItemCount();
@@ -283,6 +281,9 @@ public:
     bool deferMainResourceDataLoad() const { return m_deferMainResourceDataLoad; }
     void setDeferMainResourceDataLoad(bool flag) { m_deferMainResourceDataLoad = flag; }
 
+    bool useDeferredFrameLoading() const { return m_useDeferredFrameLoading; }
+    void setUseDeferredFrameLoading(bool flag) { m_useDeferredFrameLoading = flag; }
+
     const std::string& testPathOrURL() const { return m_testPathOrURL; }
     const std::string& expectedPixelHash() const { return m_expectedPixelHash; }
 
@@ -292,8 +293,6 @@ public:
     bool pauseAnimationAtTimeOnElementWithId(JSStringRef animationName, double time, JSStringRef elementId);
     bool pauseTransitionAtTimeOnElementWithId(JSStringRef propertyName, double time, JSStringRef elementId);
     unsigned numberOfActiveAnimations() const;
-    void suspendAnimations() const;
-    void resumeAnimations() const;
 
     void addOriginAccessWhitelistEntry(JSStringRef sourceOrigin, JSStringRef destinationProtocol, JSStringRef destinationHost, bool allowDestinationSubdomains);
     void removeOriginAccessWhitelistEntry(JSStringRef sourceOrigin, JSStringRef destinationProtocol, JSStringRef destinationHost, bool allowDestinationSubdomains);
@@ -312,7 +311,6 @@ public:
     void evaluateInWebInspector(long callId, JSStringRef script);
     void evaluateScriptInIsolatedWorld(unsigned worldID, JSObjectRef globalObject, JSStringRef script);
     void evaluateScriptInIsolatedWorldAndReturnValue(unsigned worldID, JSObjectRef globalObject, JSStringRef script);
-    void allowRoundingHacks();
 
     bool shouldStayOnPageAfterHandlingBeforeUnload() const { return m_shouldStayOnPageAfterHandlingBeforeUnload; }
     void setShouldStayOnPageAfterHandlingBeforeUnload(bool shouldStayOnPageAfterHandlingBeforeUnload) { m_shouldStayOnPageAfterHandlingBeforeUnload = shouldStayOnPageAfterHandlingBeforeUnload; }
@@ -361,6 +359,8 @@ public:
     void setMinimumTimerInterval(double);
 
     void setTextDirection(JSStringRef);
+    const std::string& titleTextDirection() const { return m_titleTextDirection; }
+    void setTitleTextDirection(const std::string& direction) { m_titleTextDirection = direction; }
 
     // Custom full screen behavior.
     void setHasCustomFullScreenBehavior(bool value) { m_customFullScreenBehavior = value; }
@@ -415,6 +415,7 @@ private:
     bool m_handlesAuthenticationChallenges;
     bool m_isPrinting;
     bool m_deferMainResourceDataLoad;
+    bool m_useDeferredFrameLoading;
     bool m_shouldPaintBrokenImage;
     bool m_shouldStayOnPageAfterHandlingBeforeUnload;
     bool m_areDesktopNotificationPermissionRequestsIgnored;
@@ -424,6 +425,7 @@ private:
     std::string m_authenticationPassword; 
     std::string m_testPathOrURL;
     std::string m_expectedPixelHash;    // empty string if no hash
+    std::string m_titleTextDirection;
 
     std::set<std::string> m_willSendRequestClearHeaders;
     

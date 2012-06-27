@@ -43,9 +43,9 @@
         }
     }
 
-    if (window.layoutTestController) {
-        layoutTestController.dumpAsText();
-        layoutTestController.waitUntilDone();
+    if (window.testRunner) {
+        testRunner.dumpAsText();
+        testRunner.waitUntilDone();
     }
 
     // Zoomed.
@@ -53,9 +53,9 @@
     {
         event = e;
         debug("\nZoomed");
-        shouldBe("event.clientX", "167");
+        shouldBe("event.clientX", "166");
         shouldBe("event.clientY", "83");
-        shouldBe("event.pageX", "167");
+        shouldBe("event.pageX", "166");
         shouldBe("event.pageY", "83");
     }
     window.addEventListener("dblclick", zoomed, false);
@@ -64,11 +64,11 @@
     zoomPageOut();
     window.removeEventListener("dblclick", zoomed, false);
 
-    if (window.layoutTestController) {
+    if (window.testRunner) {
         var area = document.getElementById('testArea');
         area.parentNode.removeChild(area);
 
-        layoutTestController.notifyDone();
+        testRunner.notifyDone();
     }
 </script>
 <script src="../js/resources/js-test-post.js"></script>

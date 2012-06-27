@@ -24,6 +24,13 @@
 
 namespace WebCore {
 
+PassOwnPtr<GraphicsLayer> GraphicsLayer::create(GraphicsLayerClient* client)
+{
+    if (s_graphicsLayerFactory)
+        return (*s_graphicsLayerFactory)(client);
+    return adoptPtr(new GraphicsLayerTextureMapper(client));
+}
+
 GraphicsLayerTextureMapper::GraphicsLayerTextureMapper(GraphicsLayerClient* client)
     : GraphicsLayer(client)
     , m_layer(adoptPtr(new TextureMapperLayer()))
@@ -45,7 +52,6 @@ void GraphicsLayerTextureMapper::notifyChange(TextureMapperLayer::ChangeMask cha
 
 void GraphicsLayerTextureMapper::didSynchronize()
 {
-    m_syncQueued = false;
     m_changeMask = 0;
     m_needsDisplay = false;
     m_needsDisplayRect = IntRect();
@@ -383,11 +389,9 @@ void GraphicsLayerTextureMapper::animationStartedTimerFired(Timer<GraphicsLayerT
     client()->notifyAnimationStarted(this, /* DOM time */ WTF::currentTime());
 }
 
-PassOwnPtr<GraphicsLayer> GraphicsLayer::create(GraphicsLayerClient* client)
+void GraphicsLayerTextureMapper::setDebugBorder(const Color& color, float width)
 {
-    if (s_graphicsLayerFactory)
-        return (*s_graphicsLayerFactory)(client);
-    return adoptPtr(new GraphicsLayerTextureMapper(client));
+    m_layer->setDebugBorder(color, width);
 }
 
 #if ENABLE(CSS_FILTERS)

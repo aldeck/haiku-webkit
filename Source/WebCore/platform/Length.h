@@ -34,8 +34,15 @@
 
 namespace WebCore {
 
-enum LengthType { Auto, Relative, Percent, Fixed, Intrinsic, MinIntrinsic, Calculated, ViewportPercentageWidth, ViewportPercentageHeight, ViewportPercentageMin, Undefined };
- 
+enum LengthType {
+    Auto, Relative, Percent, Fixed,
+    Intrinsic, MinIntrinsic,
+    MinContent, MaxContent, FillAvailable, FitContent,
+    Calculated,
+    ViewportPercentageWidth, ViewportPercentageHeight, ViewportPercentageMin,
+    Undefined
+};
+
 class CalculationValue;    
     
 struct Length {
@@ -49,21 +56,25 @@ public:
     Length(LengthType t)
         : m_intValue(0), m_quirk(false), m_type(t), m_isFloat(false)
     {
+        ASSERT(t != Calculated);
     }
 
     Length(int v, LengthType t, bool q = false)
         : m_intValue(v), m_quirk(q), m_type(t), m_isFloat(false)
     {
+        ASSERT(t != Calculated);
     }
     
     Length(FractionalLayoutUnit v, LengthType t, bool q = false)
         : m_floatValue(v.toFloat()), m_quirk(q), m_type(t), m_isFloat(true)
     {
+        ASSERT(t != Calculated);
     }
     
     Length(float v, LengthType t, bool q = false)
-    : m_floatValue(v), m_quirk(q), m_type(t), m_isFloat(true)
+        : m_floatValue(v), m_quirk(q), m_type(t), m_isFloat(true)
     {
+        ASSERT(t != Calculated);
     }
 
     Length(double v, LengthType t, bool q = false)
@@ -91,7 +102,7 @@ public:
             decrementCalculatedRef();
     }  
     
-    bool operator==(const Length& o) const { return (m_type == o.m_type) && (m_quirk == o.m_quirk) && (isUndefined() || (getFloatValue() == o.getFloatValue())); }
+    bool operator==(const Length& o) const { return (m_type == o.m_type) && (m_quirk == o.m_quirk) && (isUndefined() || (getFloatValue() == o.getFloatValue()) || isCalculatedEqual(o)); }
     bool operator!=(const Length& o) const { return !(*this == o); }
 
     const Length& operator*=(float v)
@@ -209,9 +220,12 @@ public:
     bool isRelative() const { return type() == Relative; }
     bool isPercent() const { return type() == Percent || type() == Calculated; }
     bool isFixed() const { return type() == Fixed; }
-    bool isIntrinsicOrAuto() const { return type() == Auto || type() == MinIntrinsic || type() == Intrinsic; }
+    bool isIntrinsicOrAuto() const { return type() == Auto || isLegacyIntrinsic() || isIntrinsic(); }
+    bool isLegacyIntrinsic() const { return type() == Intrinsic || type() == MinIntrinsic; }
+    bool isIntrinsic() const { return type() == MinContent || type() == MaxContent || type() == FillAvailable || type() == FitContent; }
     bool isSpecified() const { return type() == Fixed || type() == Percent || type() == Calculated || isViewportPercentage(); }
     bool isCalculated() const { return type() == Calculated; }
+    bool isCalculatedEqual(const Length&) const;
 
     Length blend(const Length& from, double progress) const
     {
@@ -220,6 +234,10 @@ public:
             return *this;
 
         if (from.isZero() && isZero())
+            return *this;
+
+        // FIXME http://webkit.org/b/86160 - Blending doesn't work with calculated expressions
+        if (from.type() == Calculated || type() == Calculated)
             return *this;
         
         LengthType resultType = type();

@@ -34,9 +34,9 @@ onload = function() {
         testPassed("Pass");
 }
 
-if (window.layoutTestController) {
-    layoutTestController.dumpAsText();
-    layoutTestController.setEditingBehavior('win');
+if (window.testRunner && window.internals) {
+    testRunner.dumpAsText();
+    internals.settings.setEditingBehavior('win');
 }
 </script>
 

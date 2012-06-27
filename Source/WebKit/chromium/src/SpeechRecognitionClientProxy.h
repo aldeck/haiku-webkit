@@ -46,7 +46,7 @@ public:
     static PassOwnPtr<SpeechRecognitionClientProxy> create(WebSpeechRecognizer*);
 
     // WebCore::SpeechRecognitionClient:
-    virtual void start(WebCore::SpeechRecognition*, const WebCore::SpeechGrammarList*, const String& lang, bool continuous) OVERRIDE;
+    virtual void start(WebCore::SpeechRecognition*, const WebCore::SpeechGrammarList*, const String& lang, bool continuous, unsigned long maxAlternatives) OVERRIDE;
     virtual void stop(WebCore::SpeechRecognition*) OVERRIDE;
     virtual void abort(WebCore::SpeechRecognition*) OVERRIDE;
 
@@ -60,7 +60,7 @@ public:
     virtual void didReceiveResult(const WebSpeechRecognitionHandle&, const WebSpeechRecognitionResult&, unsigned long resultIndex, const WebVector<WebSpeechRecognitionResult>& resultHistory) OVERRIDE;
     virtual void didReceiveNoMatch(const WebSpeechRecognitionHandle&, const WebSpeechRecognitionResult&) OVERRIDE;
     virtual void didDeleteResult(const WebSpeechRecognitionHandle&, unsigned resultIndex, const WebVector<WebSpeechRecognitionResult>& resultHistory) OVERRIDE;
-    virtual void didReceiveError(const WebSpeechRecognitionHandle&, const WebString& message, unsigned short code) OVERRIDE;
+    virtual void didReceiveError(const WebSpeechRecognitionHandle&, const WebString& message, WebSpeechRecognizerClient::ErrorCode) OVERRIDE;
     virtual void didStart(const WebSpeechRecognitionHandle&) OVERRIDE;
     virtual void didEnd(const WebSpeechRecognitionHandle&) OVERRIDE;
 

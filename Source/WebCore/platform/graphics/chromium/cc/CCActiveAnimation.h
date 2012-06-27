@@ -25,13 +25,13 @@
 #ifndef CCActiveAnimation_h
 #define CCActiveAnimation_h
 
-#include "cc/CCAnimationCurve.h"
-
 #include <wtf/Noncopyable.h>
 #include <wtf/OwnPtr.h>
 #include <wtf/PassOwnPtr.h>
 
 namespace WebCore {
+
+class CCAnimationCurve;
 
 // A CCActiveAnimation, contains all the state required to play a CCAnimationCurve.
 // Specifically, the affected property, the run state (paused, finished, etc.),
@@ -52,6 +52,7 @@ public:
         WaitingForNextTick = 1,
         WaitingForTargetAvailability,
         WaitingForStartTime,
+        WaitingForDeletion,
         Running,
         Paused,
         Finished,
@@ -90,8 +91,14 @@ public:
     void suspend(double monotonicTime);
     void resume(double monotonicTime);
 
+    // If alternatesDirection is true, on odd numbered iterations we reverse the curve.
+    bool alternatesDirection() const { return m_alternatesDirection; }
+    void setAlternatesDirection(bool alternates) { m_alternatesDirection = alternates; }
+
     bool isFinishedAt(double monotonicTime) const;
-    bool isFinished() const { return m_runState == Finished || m_runState == Aborted; }
+    bool isFinished() const { return m_runState == Finished
+                                  || m_runState == Aborted
+                                  || m_runState == WaitingForDeletion; }
 
     CCAnimationCurve* curve() { return m_curve.get(); }
     const CCAnimationCurve* curve() const { return m_curve.get(); }
@@ -128,6 +135,7 @@ private:
     RunState m_runState;
     int m_iterations;
     double m_startTime;
+    bool m_alternatesDirection;
 
     // The time offset effectively pushes the start of the animation back in time. This is
     // used for resuming paused animations -- an animation is added with a non-zero time

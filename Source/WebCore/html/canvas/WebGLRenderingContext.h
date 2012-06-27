@@ -57,6 +57,7 @@ class WebGLCompressedTextureS3TC;
 class WebGLContextAttributes;
 class WebGLDebugRendererInfo;
 class WebGLDebugShaders;
+class WebGLDepthTexture;
 class WebGLExtension;
 class WebGLFramebuffer;
 class WebGLLoseContext;
@@ -96,11 +97,11 @@ public:
     void blendFunc(GC3Denum sfactor, GC3Denum dfactor);
     void blendFuncSeparate(GC3Denum srcRGB, GC3Denum dstRGB, GC3Denum srcAlpha, GC3Denum dstAlpha);
 
-    void bufferData(GC3Denum target, GC3Dsizeiptr size, GC3Denum usage, ExceptionCode&);
+    void bufferData(GC3Denum target, long long size, GC3Denum usage, ExceptionCode&);
     void bufferData(GC3Denum target, ArrayBuffer* data, GC3Denum usage, ExceptionCode&);
     void bufferData(GC3Denum target, ArrayBufferView* data, GC3Denum usage, ExceptionCode&);
-    void bufferSubData(GC3Denum target, GC3Dintptr offset, ArrayBuffer* data, ExceptionCode&);
-    void bufferSubData(GC3Denum target, GC3Dintptr offset, ArrayBufferView* data, ExceptionCode&);
+    void bufferSubData(GC3Denum target, long long offset, ArrayBuffer* data, ExceptionCode&);
+    void bufferSubData(GC3Denum target, long long offset, ArrayBufferView* data, ExceptionCode&);
 
     GC3Denum checkFramebufferStatus(GC3Denum target);
     void clear(GC3Dbitfield mask);
@@ -141,7 +142,7 @@ public:
     void disable(GC3Denum cap);
     void disableVertexAttribArray(GC3Duint index, ExceptionCode&);
     void drawArrays(GC3Denum mode, GC3Dint first, GC3Dsizei count, ExceptionCode&);
-    void drawElements(GC3Denum mode, GC3Dsizei count, GC3Denum type, GC3Dintptr offset, ExceptionCode&);
+    void drawElements(GC3Denum mode, GC3Dsizei count, GC3Denum type, long long offset, ExceptionCode&);
 
     void enable(GC3Denum cap);
     void enableVertexAttribArray(GC3Duint index, ExceptionCode&);
@@ -174,7 +175,7 @@ public:
     WebGLGetInfo getUniform(WebGLProgram*, const WebGLUniformLocation*, ExceptionCode&);
     PassRefPtr<WebGLUniformLocation> getUniformLocation(WebGLProgram*, const String&, ExceptionCode&);
     WebGLGetInfo getVertexAttrib(GC3Duint index, GC3Denum pname, ExceptionCode&);
-    GC3Dsizeiptr getVertexAttribOffset(GC3Duint index, GC3Denum pname);
+    long long getVertexAttribOffset(GC3Duint index, GC3Denum pname);
 
     void hint(GC3Denum target, GC3Denum mode);
     GC3Dboolean isBuffer(WebGLBuffer*);
@@ -281,7 +282,7 @@ public:
     void vertexAttrib4fv(GC3Duint index, Float32Array* values);
     void vertexAttrib4fv(GC3Duint index, GC3Dfloat* values, GC3Dsizei size);
     void vertexAttribPointer(GC3Duint index, GC3Dint size, GC3Denum type, GC3Dboolean normalized,
-                             GC3Dsizei stride, GC3Dintptr offset, ExceptionCode&);
+                             GC3Dsizei stride, long long offset, ExceptionCode&);
 
     void viewport(GC3Dint x, GC3Dint y, GC3Dsizei width, GC3Dsizei height);
 
@@ -506,6 +507,7 @@ public:
     OwnPtr<WebGLDebugRendererInfo> m_webglDebugRendererInfo;
     OwnPtr<WebGLDebugShaders> m_webglDebugShaders;
     OwnPtr<WebGLCompressedTextureS3TC> m_webglCompressedTextureS3TC;
+    OwnPtr<WebGLDepthTexture> m_webglDepthTexture;
 
     // Helpers for getParameter and others
     WebGLGetInfo getBooleanParameter(GC3Denum);
@@ -574,7 +576,7 @@ public:
 
     // Helper function to check input format/type for functions {copy}Tex{Sub}Image.
     // Generates GL error and returns false if parameters are invalid.
-    bool validateTexFuncFormatAndType(const char* functionName, GC3Denum format, GC3Denum type);
+    bool validateTexFuncFormatAndType(const char* functionName, GC3Denum format, GC3Denum type, GC3Dint level);
 
     // Helper function to check input level for functions {copy}Tex{Sub}Image.
     // Generates GL error and returns false if level is invalid.
@@ -596,11 +598,17 @@ public:
     // Helper function to validate that the given ArrayBufferView
     // is of the correct type and contains enough data for the texImage call.
     // Generates GL error and returns false if parameters are invalid.
-    bool validateTexFuncData(const char* functionName,
+    bool validateTexFuncData(const char* functionName, GC3Dint level,
                              GC3Dsizei width, GC3Dsizei height,
                              GC3Denum format, GC3Denum type,
                              ArrayBufferView* pixels,
                              NullDisposition);
+
+    // Helper function to validate a given texture format is settable as in
+    // you can supply data to texImage2D, or call texImage2D, copyTexImage2D and
+    // copyTexSubImage2D.
+    // Generates GL error and returns false if the format is not settable.
+    bool validateSettableTexFormat(const char* functionName, GC3Denum format);
 
     // Helper function to validate compressed texture data is correct size
     // for the given format and dimensions.
@@ -634,6 +642,7 @@ public:
 
     // Helper function to print GL errors to console.
     void printGLErrorToConsole(const String&);
+    void printGLWarningToConsole(const char* function, const char* reason);
 
     // Helper function to print warnings to console. Currently
     // used only to warn about use of obsolete functions.

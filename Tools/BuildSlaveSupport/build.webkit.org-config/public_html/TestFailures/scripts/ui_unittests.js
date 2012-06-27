@@ -54,14 +54,17 @@ test("ui.onebar", 3, function() {
     onebar = new ui.onebar();
     onebar.attach();
     equal(onebar.innerHTML,
+        '<div><select id="platform-picker"><option>Apple</option><option>Chromium</option></select></div>' +
         '<ul class="ui-tabs-nav ui-helper-reset ui-helper-clearfix ui-widget-header ui-corner-all">' +
             '<li class="ui-state-default ui-corner-top ui-tabs-selected ui-state-active"><a href="#unexpected">Unexpected Failures</a></li>' +
             '<li class="ui-state-default ui-corner-top"><a href="#expected">Expected Failures</a></li>' +
             '<li class="ui-state-default ui-corner-top ui-state-disabled"><a href="#results">Results</a></li>' +
+            '<li class="ui-state-default ui-corner-top"><a href="#perf">perf</a></li>' +
         '</ul>' +
         '<div id="unexpected" class="ui-tabs-panel ui-widget-content ui-corner-bottom"></div>' +
         '<div id="expected" class="ui-tabs-panel ui-widget-content ui-corner-bottom ui-tabs-hide"></div>' +
-        '<div id="results" class="ui-tabs-panel ui-widget-content ui-corner-bottom ui-tabs-hide"></div>');
+        '<div id="results" class="ui-tabs-panel ui-widget-content ui-corner-bottom ui-tabs-hide"></div>' +
+        '<div id="perf" class="ui-tabs-panel ui-widget-content ui-corner-bottom ui-tabs-hide"></div>');
 
     onebar.select('expected');
     equal(window.location.hash, '#expected');

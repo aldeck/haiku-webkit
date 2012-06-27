@@ -20,11 +20,24 @@
 #include "PlatformScreen.h"
 
 #include "FloatRect.h"
+#include "NotImplemented.h"
 #include "Widget.h"
 
 #include <BlackBerryPlatformScreen.h>
 
 namespace WebCore {
+
+int screenHorizontalDPI(Widget*)
+{
+    FloatSize currentPPI = BlackBerry::Platform::Graphics::Screen::primaryScreen()->pixelsPerInch(-1);
+    return currentPPI.width();
+}
+
+int screenVerticalDPI(Widget*)
+{
+    FloatSize currentPPI = BlackBerry::Platform::Graphics::Screen::primaryScreen()->pixelsPerInch(-1);
+    return currentPPI.height();
+}
 
 bool screenIsMonochrome(Widget*)
 {
@@ -49,6 +62,11 @@ FloatRect screenAvailableRect(Widget* widget)
 FloatRect screenRect(Widget* widget)
 {
     return FloatRect(FloatPoint(), FloatSize(IntSize(BlackBerry::Platform::Graphics::Screen::primaryScreen()->size())));
+}
+
+void screenColorProfile(Widget*, const String&, ColorProfile&)
+{
+    notImplemented();
 }
 
 } // namespace WebCore

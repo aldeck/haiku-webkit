@@ -30,7 +30,6 @@
 #include "Element.h"
 #include "htmlediting.h"
 #include "TextIterator.h"
-#include "TreeScopeAdjuster.h"
 #include "VisiblePosition.h"
 #include "visible_units.h"
 #include "Range.h"
@@ -294,11 +293,11 @@ void VisibleSelection::setStartAndEndFromBaseAndExtentRespectingGranularity(Text
             VisiblePosition start = VisiblePosition(m_start, m_affinity);
             VisiblePosition originalEnd(m_end, m_affinity);
             EWordSide side = RightWordIfOnBoundary;
-            if (isEndOfDocument(start) || (isEndOfLine(start) && !isStartOfLine(start) && !isEndOfParagraph(start)))
+            if (isEndOfEditableOrNonEditableContent(start) || (isEndOfLine(start) && !isStartOfLine(start) && !isEndOfParagraph(start)))
                 side = LeftWordIfOnBoundary;
             m_start = startOfWord(start, side).deepEquivalent();
             side = RightWordIfOnBoundary;
-            if (isEndOfDocument(originalEnd) || (isEndOfLine(originalEnd) && !isStartOfLine(originalEnd) && !isEndOfParagraph(originalEnd)))
+            if (isEndOfEditableOrNonEditableContent(originalEnd) || (isEndOfLine(originalEnd) && !isStartOfLine(originalEnd) && !isEndOfParagraph(originalEnd)))
                 side = LeftWordIfOnBoundary;
                 
             VisiblePosition wordEnd(endOfWord(originalEnd, side));
@@ -350,7 +349,7 @@ void VisibleSelection::setStartAndEndFromBaseAndExtentRespectingGranularity(Text
             break;
         case ParagraphGranularity: {
             VisiblePosition pos(m_start, m_affinity);
-            if (isStartOfLine(pos) && isEndOfDocument(pos))
+            if (isStartOfLine(pos) && isEndOfEditableOrNonEditableContent(pos))
                 pos = pos.previous();
             m_start = startOfParagraph(pos).deepEquivalent();
             VisiblePosition visibleParagraphEnd = endOfParagraph(VisiblePosition(m_end, m_affinity));
@@ -430,6 +429,11 @@ void VisibleSelection::validate(TextGranularity granularity)
         // set these two positions to VisiblePosition deepEquivalent()s above)?
         m_start = m_start.downstream();
         m_end = m_end.upstream();
+
+        // FIXME: Position::downstream() or Position::upStream() might violate editing boundaries
+        // if an anchor node has a Shadow DOM. So we adjust selection to avoid crossing editing
+        // boundaries again. See https://bugs.webkit.org/show_bug.cgi?id=87463
+        adjustSelectionToAvoidCrossingEditingBoundaries();
     }
 }
 
@@ -457,6 +461,42 @@ void VisibleSelection::setWithoutValidation(const Position& base, const Position
     m_selectionType = base == extent ? CaretSelection : RangeSelection;
 }
 
+static Position adjustPositionForEnd(const Position& currentPosition, Node* startContainerNode)
+{
+    TreeScope* treeScope = startContainerNode->treeScope();
+
+    ASSERT(currentPosition.containerNode()->treeScope() != treeScope);
+
+    if (Node* ancestor = treeScope->ancestorInThisScope(currentPosition.containerNode())) {
+        if (ancestor->contains(startContainerNode))
+            return positionAfterNode(ancestor);
+        return positionBeforeNode(ancestor);
+    }
+
+    if (Node* lastChild = treeScope->rootNode()->lastChild())
+        return positionAfterNode(lastChild);
+
+    return Position();
+}
+
+static Position adjustPositionForStart(const Position& currentPosition, Node* endContainerNode)
+{
+    TreeScope* treeScope = endContainerNode->treeScope();
+
+    ASSERT(currentPosition.containerNode()->treeScope() != treeScope);
+    
+    if (Node* ancestor = treeScope->ancestorInThisScope(currentPosition.containerNode())) {
+        if (ancestor->contains(endContainerNode))
+            return positionBeforeNode(ancestor);
+        return positionAfterNode(ancestor);
+    }
+
+    if (Node* firstChild = treeScope->rootNode()->firstChild())
+        return positionBeforeNode(firstChild);
+
+    return Position();
+}
+
 void VisibleSelection::adjustSelectionToAvoidCrossingShadowBoundaries()
 {
     if (m_base.isNull() || m_start.isNull() || m_end.isNull())
@@ -466,10 +506,10 @@ void VisibleSelection::adjustSelectionToAvoidCrossingShadowBoundaries()
         return;
 
     if (m_baseIsFirst) {
-        m_extent = TreeScopeAdjuster(m_start.anchorNode()->treeScope()).adjustPositionBefore(m_end);
+        m_extent = adjustPositionForEnd(m_end, m_start.containerNode());
         m_end = m_extent;
     } else {
-        m_extent = TreeScopeAdjuster(m_end.anchorNode()->treeScope()).adjustPositionAfter(m_start);
+        m_extent = adjustPositionForStart(m_start, m_end.containerNode());
         m_start = m_extent;
     }
 
@@ -586,6 +626,11 @@ void VisibleSelection::adjustSelectionToAvoidCrossingEditingBoundaries()
 bool VisibleSelection::isContentEditable() const
 {
     return isEditablePosition(start());
+}
+
+bool VisibleSelection::rendererIsEditable() const
+{
+    return isEditablePosition(start(), ContentIsEditable, DoNotUpdateStyle);
 }
 
 bool VisibleSelection::isContentRichlyEditable() const

@@ -54,8 +54,13 @@
 #include "RegExpObject.h"
 #include "StrictEvalActivation.h"
 #include "StrongInlines.h"
+#include <wtf/RetainPtr.h>
 #include <wtf/Threading.h>
 #include <wtf/WTFThreadData.h>
+
+#if ENABLE(DFG_JIT)
+#include "ConservativeRoots.h"
+#endif
 
 #if ENABLE(REGEXP_TRACING)
 #include "RegExp.h"
@@ -82,6 +87,7 @@ extern const HashTable numberConstructorTable;
 extern const HashTable numberPrototypeTable;
 JS_EXPORTDATA extern const HashTable objectConstructorTable;
 extern const HashTable objectPrototypeTable;
+extern const HashTable privateNamePrototypeTable;
 extern const HashTable regExpTable;
 extern const HashTable regExpConstructorTable;
 extern const HashTable regExpPrototypeTable;
@@ -95,13 +101,10 @@ static bool enableAssembler(ExecutableAllocator& executableAllocator)
         return false;
 
 #if USE(CF)
-    CFStringRef canUseJITKey = CFStringCreateWithCString(0 , "JavaScriptCoreUseJIT", kCFStringEncodingMacRoman);
-    CFBooleanRef canUseJIT = (CFBooleanRef)CFPreferencesCopyAppValue(canUseJITKey, kCFPreferencesCurrentApplication);
-    if (canUseJIT) {
-        return kCFBooleanTrue == canUseJIT;
-        CFRelease(canUseJIT);
-    }
-    CFRelease(canUseJITKey);
+    RetainPtr<CFStringRef> canUseJITKey(AdoptCF, CFStringCreateWithCString(0 , "JavaScriptCoreUseJIT", kCFStringEncodingMacRoman));
+    RetainPtr<CFBooleanRef> canUseJIT(AdoptCF, (CFBooleanRef)CFPreferencesCopyAppValue(canUseJITKey.get(), kCFPreferencesCurrentApplication));
+    if (canUseJIT)
+        return kCFBooleanTrue == canUseJIT.get();
 #endif
 
 #if USE(CF) || OS(UNIX)
@@ -113,8 +116,8 @@ static bool enableAssembler(ExecutableAllocator& executableAllocator)
 }
 #endif
 
-JSGlobalData::JSGlobalData(GlobalDataType globalDataType, ThreadStackType threadStackType, HeapSize heapSize)
-    : heap(this, heapSize)
+JSGlobalData::JSGlobalData(GlobalDataType globalDataType, ThreadStackType threadStackType, HeapType heapType)
+    : heap(this, heapType)
     , globalDataType(globalDataType)
     , clientData(0)
     , topCallFrame(CallFrame::noCaller())
@@ -131,6 +134,7 @@ JSGlobalData::JSGlobalData(GlobalDataType globalDataType, ThreadStackType thread
     , numberPrototypeTable(fastNew<HashTable>(JSC::numberPrototypeTable))
     , objectConstructorTable(fastNew<HashTable>(JSC::objectConstructorTable))
     , objectPrototypeTable(fastNew<HashTable>(JSC::objectPrototypeTable))
+    , privateNamePrototypeTable(fastNew<HashTable>(JSC::privateNamePrototypeTable))
     , regExpTable(fastNew<HashTable>(JSC::regExpTable))
     , regExpConstructorTable(fastNew<HashTable>(JSC::regExpConstructorTable))
     , regExpPrototypeTable(fastNew<HashTable>(JSC::regExpPrototypeTable))
@@ -153,6 +157,7 @@ JSGlobalData::JSGlobalData(GlobalDataType globalDataType, ThreadStackType thread
     , dynamicGlobalObject(0)
     , cachedUTCOffset(std::numeric_limits<double>::quiet_NaN())
     , maxReentryDepth(threadStackType == ThreadStackTypeSmall ? MaxSmallThreadReentryDepth : MaxLargeThreadReentryDepth)
+    , m_enabledProfiler(0)
     , m_regExpCache(new RegExpCache(this))
 #if ENABLE(REGEXP_TRACING)
     , m_rtTraceList(new RTTraceList())
@@ -172,6 +177,9 @@ JSGlobalData::JSGlobalData(GlobalDataType globalDataType, ThreadStackType thread
     , m_inDefineOwnProperty(false)
 {
     interpreter = new Interpreter;
+
+    if (isSharedInstance())
+        turnOffVerifier();
 
     // Need to be careful to keep everything consistent here
     IdentifierTable* existingEntryIdentifierTable = wtfThreadData().setCurrentIdentifierTable(identifierTable);
@@ -234,6 +242,7 @@ JSGlobalData::~JSGlobalData()
     numberPrototypeTable->deleteTable();
     objectConstructorTable->deleteTable();
     objectPrototypeTable->deleteTable();
+    privateNamePrototypeTable->deleteTable();
     regExpTable->deleteTable();
     regExpConstructorTable->deleteTable();
     regExpPrototypeTable->deleteTable();
@@ -253,6 +262,7 @@ JSGlobalData::~JSGlobalData()
     fastDelete(const_cast<HashTable*>(numberPrototypeTable));
     fastDelete(const_cast<HashTable*>(objectConstructorTable));
     fastDelete(const_cast<HashTable*>(objectPrototypeTable));
+    fastDelete(const_cast<HashTable*>(privateNamePrototypeTable));
     fastDelete(const_cast<HashTable*>(regExpTable));
     fastDelete(const_cast<HashTable*>(regExpConstructorTable));
     fastDelete(const_cast<HashTable*>(regExpPrototypeTable));
@@ -279,19 +289,19 @@ JSGlobalData::~JSGlobalData()
 #endif
 }
 
-PassRefPtr<JSGlobalData> JSGlobalData::createContextGroup(ThreadStackType type, HeapSize heapSize)
+PassRefPtr<JSGlobalData> JSGlobalData::createContextGroup(ThreadStackType type, HeapType heapType)
 {
-    return adoptRef(new JSGlobalData(APIContextGroup, type, heapSize));
+    return adoptRef(new JSGlobalData(APIContextGroup, type, heapType));
 }
 
-PassRefPtr<JSGlobalData> JSGlobalData::create(ThreadStackType type, HeapSize heapSize)
+PassRefPtr<JSGlobalData> JSGlobalData::create(ThreadStackType type, HeapType heapType)
 {
-    return adoptRef(new JSGlobalData(Default, type, heapSize));
+    return adoptRef(new JSGlobalData(Default, type, heapType));
 }
 
-PassRefPtr<JSGlobalData> JSGlobalData::createLeaked(ThreadStackType type, HeapSize heapSize)
+PassRefPtr<JSGlobalData> JSGlobalData::createLeaked(ThreadStackType type, HeapType heapType)
 {
-    return create(type, heapSize);
+    return create(type, heapType);
 }
 
 bool JSGlobalData::sharedInstanceExists()
@@ -407,7 +417,7 @@ struct StackPreservingRecompiler : public MarkedBlock::VoidFunctor {
         FunctionExecutable* executable = jsCast<FunctionExecutable*>(cell);
         if (currentlyExecutingFunctions.contains(executable))
             return;
-        executable->discardCode();
+        executable->clearCodeIfNotCompiling();
     }
 };
 
@@ -446,6 +456,19 @@ void releaseExecutableMemory(JSGlobalData& globalData)
 {
     globalData.releaseExecutableMemory();
 }
+
+#if ENABLE(DFG_JIT)
+void JSGlobalData::gatherConservativeRoots(ConservativeRoots& conservativeRoots)
+{
+    for (size_t i = 0; i < scratchBuffers.size(); i++) {
+        ScratchBuffer* scratchBuffer = scratchBuffers[i];
+        if (scratchBuffer->activeLength()) {
+            void* bufferStart = scratchBuffer->dataBuffer();
+            conservativeRoots.add(bufferStart, static_cast<void*>(static_cast<char*>(bufferStart) + scratchBuffer->activeLength()));
+        }
+    }
+}
+#endif
 
 #if ENABLE(REGEXP_TRACING)
 void JSGlobalData::addRegExpToTrace(RegExp* regExp)

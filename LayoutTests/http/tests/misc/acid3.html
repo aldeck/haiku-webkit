@@ -2,8 +2,10 @@
 <html>
  <title>The Acid3 Test</title>
  <script type="text/javascript">
-  if (window.layoutTestController)
-    layoutTestController.waitUntilDone();
+  if (window.testRunner) {
+    testRunner.waitUntilDone();
+    testRunner.keepWebHistory();
+  }
 
   var startTime = new Date();
  </script>
@@ -3458,10 +3460,10 @@
       if (errors == 0)
         log += "\nNo JS errors and no timing issues.\nWas the rendering pixel-for-pixel perfect too?";
 
-      if (window.layoutTestController) {
+      if (window.testRunner) {
         if (score < 100)
           alert(log);
-        layoutTestController.notifyDone();
+        testRunner.notifyDone();
       }
     }
   }

@@ -36,6 +36,7 @@
 namespace WebCore {
     
     class ActiveDOMObject;
+    class DOMDataStore;
     
     static const int v8DOMWrapperTypeIndex = 0;
     static const int v8DOMWrapperObjectIndex = 1;
@@ -46,12 +47,18 @@ namespace WebCore {
     typedef v8::Persistent<v8::FunctionTemplate> (*GetTemplateFunction)();
     typedef void (*DerefObjectFunction)(void*);
     typedef ActiveDOMObject* (*ToActiveDOMObjectFunction)(v8::Handle<v8::Object>);
-    
+    typedef void (*DOMWrapperVisitorFunction)(DOMDataStore*, void*, v8::Persistent<v8::Object>);
+
+    enum WrapperTypePrototype {
+        WrapperTypeObjectPrototype,
+        WrapperTypeErrorPrototype
+    };
+
     // This struct provides a way to store a bunch of information that is helpful when unwrapping
     // v8 objects. Each v8 bindings class has exactly one static WrapperTypeInfo member, so
     // comparing pointers is a safe way to determine if types match.
     struct WrapperTypeInfo {
-        
+
         static WrapperTypeInfo* unwrap(v8::Handle<v8::Value> typeInfoWrapper)
         {
             return reinterpret_cast<WrapperTypeInfo*>(v8::External::Unwrap(typeInfoWrapper));
@@ -91,7 +98,9 @@ namespace WebCore {
         const GetTemplateFunction getTemplateFunction;
         const DerefObjectFunction derefObjectFunction;
         const ToActiveDOMObjectFunction toActiveDOMObjectFunction;
+        const DOMWrapperVisitorFunction domWrapperVisitorFunction;
         const WrapperTypeInfo* parentClass;
+        const WrapperTypePrototype wrapperTypePrototype;
     };
 }
 

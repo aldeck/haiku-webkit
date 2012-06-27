@@ -61,7 +61,7 @@ Node* highestEnclosingNodeOfType(const Position&, bool (*nodeIsOfType)(const Nod
 Node* highestNodeToRemoveInPruning(Node*);
 Node* lowestEditableAncestor(Node*);
 
-Node* enclosingBlock(Node*, EditingBoundaryCrossingRule = CannotCrossEditingBoundary);
+Element* enclosingBlock(Node*, EditingBoundaryCrossingRule = CannotCrossEditingBoundary);
 Node* enclosingTableCell(const Position&);
 Node* enclosingEmptyListItem(const VisiblePosition&);
 Node* enclosingAnchorElement(const Position&);
@@ -151,8 +151,9 @@ inline Position lastPositionInOrAfterNode(Node* node)
 int comparePositions(const Position&, const Position&);
 
 // boolean functions on Position
-    
-bool isEditablePosition(const Position&, EditableType = ContentIsEditable);
+
+enum EUpdateStyle { UpdateStyle, DoNotUpdateStyle };
+bool isEditablePosition(const Position&, EditableType = ContentIsEditable, EUpdateStyle = UpdateStyle);
 bool isRichlyEditablePosition(const Position&, EditableType = ContentIsEditable);
 bool isFirstVisiblePositionInSpecialElement(const Position&);
 bool isLastVisiblePositionInSpecialElement(const Position&);
@@ -180,8 +181,8 @@ bool lineBreakExistsAtVisiblePosition(const VisiblePosition&);
     
 int comparePositions(const VisiblePosition&, const VisiblePosition&);
 
-int indexForVisiblePosition(const VisiblePosition&, RefPtr<Element>& scope);
-VisiblePosition visiblePositionForIndex(int index, Element *scope);
+int indexForVisiblePosition(const VisiblePosition&, RefPtr<ContainerNode>& scope);
+VisiblePosition visiblePositionForIndex(int index, ContainerNode* scope);
 
 // -------------------------------------------------------------------------
 // Range

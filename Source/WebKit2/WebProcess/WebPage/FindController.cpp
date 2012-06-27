@@ -156,7 +156,7 @@ void FindController::findString(const String& string, FindOptions options, unsig
 
     bool found = m_webPage->corePage()->findString(string, core(options));
 
-    m_webPage->drawingArea()->dispatchAfterEnsuringUpdatedScrollPosition(bind(&FindController::updateFindUIAfterPageScroll, this, found, string, options, maxMatchCount));
+    m_webPage->drawingArea()->dispatchAfterEnsuringUpdatedScrollPosition(WTF::bind(&FindController::updateFindUIAfterPageScroll, this, found, string, options, maxMatchCount));
 }
 
 void FindController::hideFindUI()
@@ -164,6 +164,7 @@ void FindController::hideFindUI()
     if (m_findPageOverlay)
         m_webPage->uninstallPageOverlay(m_findPageOverlay, false);
 
+    m_webPage->corePage()->unmarkAllTextMatches();
     hideFindIndicator();
 }
 

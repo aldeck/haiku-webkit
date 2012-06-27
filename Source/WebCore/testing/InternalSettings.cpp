@@ -98,6 +98,15 @@ InternalSettings::InternalSettings(Frame* frame)
 #if ENABLE(SHADOW_DOM)
     , m_originalShadowDOMEnabled(RuntimeEnabledFeatures::shadowDOMEnabled())
 #endif
+    , m_originalEditingBehavior(settings()->editingBehaviorType())
+    , m_originalFixedPositionCreatesStackingContext(settings()->fixedPositionCreatesStackingContext())
+    , m_originalSyncXHRInDocumentsEnabled(settings()->syncXHRInDocumentsEnabled())
+#if ENABLE(INSPECTOR) && ENABLE(JAVASCRIPT_DEBUGGER)
+    , m_originalJavaScriptProfilingEnabled(page() && page()->inspectorController() && page()->inspectorController()->profilerEnabled())
+#endif
+    , m_originalWindowFocusRestricted(settings()->windowFocusRestricted())
+    , m_originalDeviceSupportsTouch(settings()->deviceSupportsTouch())
+    , m_originalDeviceSupportsMouse(settings()->deviceSupportsMouse())
 {
 }
 
@@ -109,6 +118,16 @@ void InternalSettings::restoreTo(Settings* settings)
 #if ENABLE(SHADOW_DOM)
     RuntimeEnabledFeatures::setShadowDOMEnabled(m_originalShadowDOMEnabled);
 #endif
+    settings->setEditingBehaviorType(m_originalEditingBehavior);
+    settings->setFixedPositionCreatesStackingContext(m_originalFixedPositionCreatesStackingContext);
+    settings->setSyncXHRInDocumentsEnabled(m_originalSyncXHRInDocumentsEnabled);
+#if ENABLE(INSPECTOR) && ENABLE(JAVASCRIPT_DEBUGGER)
+    if (page() && page()->inspectorController())
+        page()->inspectorController()->setProfilerEnabled(m_originalJavaScriptProfilingEnabled);
+#endif
+    settings->setWindowFocusRestricted(m_originalWindowFocusRestricted);
+    settings->setDeviceSupportsTouch(m_originalDeviceSupportsTouch);
+    settings->setDeviceSupportsMouse(m_originalDeviceSupportsMouse);
 }
 
 Settings* InternalSettings::settings() const
@@ -215,12 +234,6 @@ void InternalSettings::setPageScaleFactor(float scaleFactor, int x, int y, Excep
     page()->setPageScaleFactor(scaleFactor, IntPoint(x, y));
 }
 
-void InternalSettings::setPerTileDrawingEnabled(bool enabled, ExceptionCode& ec)
-{
-    InternalSettingsGuardForSettings();
-    settings()->setPerTileDrawingEnabled(enabled);
-}
-
 void InternalSettings::setShadowDOMEnabled(bool enabled, ExceptionCode& ec)
 {
 #if ENABLE(SHADOW_DOM)
@@ -243,6 +256,18 @@ void InternalSettings::setTouchEventEmulationEnabled(bool enabled, ExceptionCode
     UNUSED_PARAM(enabled);
     UNUSED_PARAM(ec);
 #endif
+}
+
+void InternalSettings::setDeviceSupportsTouch(bool enabled, ExceptionCode& ec)
+{
+    InternalSettingsGuardForSettings();
+    settings()->setDeviceSupportsTouch(enabled);
+}
+
+void InternalSettings::setDeviceSupportsMouse(bool enabled, ExceptionCode& ec)
+{
+    InternalSettingsGuardForSettings();
+    settings()->setDeviceSupportsMouse(enabled);
 }
 
 typedef void (Settings::*SetFontFamilyFunction)(const AtomicString&, UScriptCode);
@@ -327,6 +352,53 @@ void InternalSettings::setMediaPlaybackRequiresUserGesture(bool enabled, Excepti
 {
     InternalSettingsGuardForSettings();
     settings()->setMediaPlaybackRequiresUserGesture(enabled);
+}
+
+void InternalSettings::setEditingBehavior(const String& editingBehavior, ExceptionCode& ec)
+{
+    InternalSettingsGuardForSettings();
+    if (equalIgnoringCase(editingBehavior, "win"))
+        settings()->setEditingBehaviorType(EditingWindowsBehavior);
+    else if (equalIgnoringCase(editingBehavior, "mac"))
+        settings()->setEditingBehaviorType(EditingMacBehavior);
+    else if (equalIgnoringCase(editingBehavior, "unix"))
+        settings()->setEditingBehaviorType(EditingUnixBehavior);
+    else
+        ec = SYNTAX_ERR;
+}
+
+void InternalSettings::setFixedPositionCreatesStackingContext(bool creates, ExceptionCode& ec)
+{
+    InternalSettingsGuardForFrameView();
+    settings()->setFixedPositionCreatesStackingContext(creates);
+}
+
+void InternalSettings::setSyncXHRInDocumentsEnabled(bool enabled, ExceptionCode& ec)
+{
+    InternalSettingsGuardForSettings();
+    settings()->setSyncXHRInDocumentsEnabled(enabled);
+}
+
+void InternalSettings::setJavaScriptProfilingEnabled(bool enabled, ExceptionCode& ec)
+{
+#if ENABLE(INSPECTOR)
+    if (!page() || !page()->inspectorController()) {
+        ec = INVALID_ACCESS_ERR;
+        return;
+    }
+
+    page()->inspectorController()->setProfilerEnabled(enabled);
+#else
+    UNUSED_PARAM(enabled);
+    UNUSED_PARAM(ec);
+    return;
+#endif
+}
+
+void InternalSettings::setWindowFocusRestricted(bool restricted, ExceptionCode& ec)
+{
+    InternalSettingsGuardForSettings();
+    settings()->setWindowFocusRestricted(restricted);
 }
 
 }

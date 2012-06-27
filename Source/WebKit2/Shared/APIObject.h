@@ -30,7 +30,7 @@
 
 namespace WebKit {
 
-class APIObject : public RefCounted<APIObject> {
+class APIObject : public ThreadSafeRefCounted<APIObject> {
 public:
     enum Type {
         // Base types
@@ -88,6 +88,8 @@ public:
         TypeGrammarDetail,
         TypeIconDatabase,
         TypeInspector,
+        TypeIntentData,
+        TypeIntentServiceInfo,
         TypeKeyValueStorageManager,
         TypeMediaCacheManager,
         TypeNavigationData,

@@ -46,7 +46,7 @@
 #include "FileSystem.h"
 
 #include <QApplication>
-#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
+#if HAVE(QT5)
 #include <QStandardPaths>
 #else
 #include <QDesktopServices>
@@ -715,12 +715,8 @@ void QWebSettings::clearIconDatabase()
 QIcon QWebSettings::iconForUrl(const QUrl& url)
 {
     WebCore::initializeWebCoreQt();
-    WebCore::Image* image = WebCore::iconDatabase().synchronousIconForPageURL(WebCore::KURL(url).string(),
+    QPixmap* icon = WebCore::iconDatabase().synchronousNativeIconForPageURL(WebCore::KURL(url).string(),
                                 WebCore::IntSize(16, 16));
-    if (!image)
-        return QPixmap();
-
-    QPixmap* icon = image->nativeImageForCurrentFrame();
     if (!icon)
         return QPixmap();
 
@@ -1151,7 +1147,7 @@ void QWebSettings::enablePersistentStorage(const QString& path)
 
     if (path.isEmpty()) {
 
-#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
+#if HAVE(QT5)
         storagePath = QStandardPaths::writableLocation(QStandardPaths::DataLocation);
 #else
         storagePath = QDesktopServices::storageLocation(QDesktopServices::DataLocation);
@@ -1174,7 +1170,11 @@ void QWebSettings::enablePersistentStorage(const QString& path)
 #if ENABLE(NETSCAPE_PLUGIN_METADATA_CACHE)
     // All applications can share the common QtWebkit cache file(s).
     // Path is not configurable and uses QDesktopServices::CacheLocation by default.
+#if HAVE(QT5)
+    QString cachePath = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
+#else
     QString cachePath = QDesktopServices::storageLocation(QDesktopServices::CacheLocation);
+#endif
     WebCore::makeAllDirectories(cachePath);
 
     QFileInfo info(cachePath);

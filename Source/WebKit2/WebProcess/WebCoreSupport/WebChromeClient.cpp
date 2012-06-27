@@ -31,6 +31,7 @@
 #include "InjectedBundleNavigationAction.h"
 #include "InjectedBundleUserMessageCoders.h"
 #include "LayerTreeHost.h"
+#include "WebColorChooser.h"
 #include "WebCoreArgumentCoders.h"
 #include "WebFrame.h"
 #include "WebFrameLoaderClient.h"
@@ -45,6 +46,7 @@
 #include "WebProcess.h"
 #include "WebSearchPopupMenu.h"
 #include <WebCore/AXObjectCache.h>
+#include <WebCore/ColorChooser.h>
 #include <WebCore/DatabaseTracker.h>
 #include <WebCore/FileChooser.h>
 #include <WebCore/FileIconLoader.h>
@@ -468,20 +470,25 @@ void WebChromeClient::scrollRectIntoView(const IntRect&) const
     notImplemented();
 }
 
-bool WebChromeClient::shouldMissingPluginMessageBeButton() const
+bool WebChromeClient::shouldUnavailablePluginMessageBeButton(RenderEmbeddedObject::PluginUnavailabilityReason pluginUnavailabilityReason) const
 {
-    // FIXME: <rdar://problem/8794397> We should only return true when there is a 
-    // missingPluginButtonClicked callback defined on the Page UI client.
-    return true;
+    if (pluginUnavailabilityReason == RenderEmbeddedObject::PluginMissing || pluginUnavailabilityReason == RenderEmbeddedObject::InsecurePluginVersion) {
+        // FIXME: <rdar://problem/8794397> We should only return true when there is a
+        // missingPluginButtonClicked callback defined on the Page UI client.
+        return true;
+    }
+
+    return false;
 }
     
-void WebChromeClient::missingPluginButtonClicked(Element* element) const
+void WebChromeClient::unavailablePluginButtonClicked(Element* element, RenderEmbeddedObject::PluginUnavailabilityReason pluginUnavailabilityReason) const
 {
     ASSERT(element->hasTagName(objectTag) || element->hasTagName(embedTag));
+    ASSERT(pluginUnavailabilityReason == RenderEmbeddedObject::PluginMissing || pluginUnavailabilityReason == RenderEmbeddedObject::InsecurePluginVersion);
 
     HTMLPlugInImageElement* pluginElement = static_cast<HTMLPlugInImageElement*>(element);
 
-    m_page->send(Messages::WebPageProxy::MissingPluginButtonClicked(pluginElement->serviceType(), pluginElement->url(), pluginElement->getAttribute(pluginspageAttr)));
+    m_page->send(Messages::WebPageProxy::UnavailablePluginButtonClicked(pluginUnavailabilityReason, pluginElement->serviceType(), pluginElement->url(), pluginElement->getAttribute(pluginspageAttr)));
 }
 
 void WebChromeClient::scrollbarsModeDidChange() const
@@ -589,6 +596,16 @@ bool WebChromeClient::paintCustomOverhangArea(GraphicsContext* context, const In
     m_page->injectedBundleUIClient().paintCustomOverhangArea(m_page, context, horizontalOverhangArea, verticalOverhangArea, dirtyRect);
     return true;
 }
+
+#if ENABLE(INPUT_TYPE_COLOR)
+PassOwnPtr<ColorChooser> WebChromeClient::createColorChooser(ColorChooserClient* client, const Color& initialColor)
+{
+    if (m_page->activeColorChooser())
+        return nullptr;
+
+    return adoptPtr(new WebColorChooser(m_page, client, initialColor));
+}
+#endif
 
 void WebChromeClient::runOpenPanel(Frame* frame, PassRefPtr<FileChooser> prpFileChooser)
 {

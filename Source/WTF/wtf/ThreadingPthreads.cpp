@@ -178,7 +178,7 @@ ThreadIdentifier createThreadInternal(ThreadFunction entryPoint, void* data, con
     if (pthread_attr_getstack(&attr, &stackAddr, &stackSize))
         LOG_ERROR("pthread_attr_getstack() failed: %d", errno);
     else {
-        stackSize = BlackBerry::Platform::Settings::get()->secondaryThreadStackSize();
+        stackSize = BlackBerry::Platform::Settings::instance()->secondaryThreadStackSize();
         if (pthread_attr_setstack(&attr, stackAddr, stackSize))
             LOG_ERROR("pthread_attr_getstack() failed: %d", errno);
     }
@@ -288,14 +288,16 @@ Mutex::Mutex()
     pthread_mutexattr_init(&attr);
     pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_NORMAL);
 
-    pthread_mutex_init(&m_mutex, &attr);
+    int result = pthread_mutex_init(&m_mutex, &attr);
+    ASSERT_UNUSED(result, !result);
 
     pthread_mutexattr_destroy(&attr);
 }
 
 Mutex::~Mutex()
 {
-    pthread_mutex_destroy(&m_mutex);
+    int result = pthread_mutex_destroy(&m_mutex);
+    ASSERT_UNUSED(result, !result);
 }
 
 void Mutex::lock()

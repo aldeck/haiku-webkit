@@ -16,8 +16,7 @@ function test()
     removeVendorPrefixes();
 
     name = self.location.pathname;
-    description = "My Test Database";
-    request = evalAndLog("indexedDB.open(name, description)");
+    request = evalAndLog("indexedDB.open(name)");
     request.onsuccess = openSuccess;
     request.onerror = unexpectedErrorCallback;
 }
@@ -35,7 +34,7 @@ function openSuccess()
         debug("close db1 now so versionchange doesn't trigger on db1 again when we call db3.setVersion");
         evalAndLog("db1.close();");
     };
-    request = evalAndLog("indexedDB.open(name, description)");
+    request = evalAndLog("indexedDB.open(name)");
     request.onerror = unexpectedErrorCallback;
     request.onsuccess = openSuccess2;
 }
@@ -64,10 +63,10 @@ function openSuccess2()
 function postSetVersion()
 {
     shouldBe("event.target.result", "event.target.transaction");
-    shouldBe("event.target.transaction.mode", "IDBTransaction.VERSION_CHANGE");
+    shouldBe("event.target.transaction.mode", "'versionchange'");
     shouldBe("db2.version", "'1'");
 
-    request = evalAndLog("request = indexedDB.open(name, description);");
+    request = evalAndLog("request = indexedDB.open(name);");
     request.onerror = unexpectedErrorCallback;
     request.onsuccess = openSuccess3;
 }
@@ -92,7 +91,7 @@ function openSuccess3()
 function postSetVersion2()
 {
     shouldBe("event.target.result", "event.target.transaction");
-    shouldBe("event.target.transaction.mode", "IDBTransaction.VERSION_CHANGE");
+    shouldBe("event.target.transaction.mode", "'versionchange'");
     shouldBe("db3.version", "'2'");
     shouldBe("versionChangeEventCount", "3");
     finishJSTest();

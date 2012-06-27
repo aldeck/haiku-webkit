@@ -234,12 +234,6 @@ void LayoutTestController::setIconDatabaseEnabled(bool iconDatabaseEnabled)
     notImplemented();
 }
 
-void LayoutTestController::setJavaScriptProfilingEnabled(bool profilingEnabled)
-{
-    UNUSED_PARAM(profilingEnabled);
-    notImplemented();
-}
-
 void LayoutTestController::setMainFrameIsFirstResponder(bool flag)
 {
     UNUSED_PARAM(flag);
@@ -435,21 +429,6 @@ void LayoutTestController::disableImageLoading()
     BlackBerry::WebKit::DumpRenderTree::currentInstance()->page()->settings()->setLoadsImagesAutomatically(false);
 }
 
-JSRetainPtr<JSStringRef> LayoutTestController::counterValueForElementById(JSStringRef id)
-{
-    String idStr = jsStringRefToWebCoreString(id);
-    WebCore::Element* coreElement = mainFrame->document()->getElementById(AtomicString(idStr));
-    if (!coreElement)
-        return 0;
-
-    CString counterValueStr = counterValueForElement(coreElement).utf8();
-    if (counterValueStr.isNull())
-        return 0;
-
-    JSRetainPtr<JSStringRef> counterValue(Adopt, JSStringCreateWithUTF8CString(counterValueStr.data()));
-    return counterValue;
-}
-
 void LayoutTestController::overridePreference(JSStringRef key, JSStringRef value)
 {
     if (!mainFrame)
@@ -547,12 +526,6 @@ int LayoutTestController::numberOfPages(float, float)
 {
     notImplemented();
     return -1;
-}
-
-bool LayoutTestController::isPageBoxVisible(int) const
-{
-    notImplemented();
-    return false;
 }
 
 void LayoutTestController::setScrollbarPolicy(JSStringRef, JSStringRef)
@@ -659,22 +632,6 @@ void LayoutTestController::setPluginsEnabled(bool flag)
     notImplemented();
 }
 
-void LayoutTestController::setEditingBehavior(const char* editingBehavior)
-{
-    if (!mainFrame)
-        return;
-    WebCore::EditingBehaviorType type = WebCore::EditingUnixBehavior;
-    if (!strcmp(editingBehavior, "win"))
-        type = WebCore::EditingWindowsBehavior;
-    else if (!strcmp(editingBehavior, "mac"))
-        type = WebCore::EditingMacBehavior;
-    else if (!strcmp(editingBehavior, "unix"))
-        type = WebCore::EditingUnixBehavior;
-    else
-        CRASH();
-    mainFrame->page()->settings()->setEditingBehaviorType(type);
-}
-
 void LayoutTestController::abortModal()
 {
     notImplemented();
@@ -711,18 +668,6 @@ void LayoutTestController::setViewModeMediaFeature(const JSStringRef mode)
     notImplemented();
 }
 
-void LayoutTestController::suspendAnimations() const
-{
-    if (mainFrame && mainFrame->animation())
-        mainFrame->animation()->suspendAnimations();
-}
-
-void LayoutTestController::resumeAnimations() const
-{
-    if (mainFrame && mainFrame->animation())
-        mainFrame->animation()->resumeAnimations();
-}
-
 void LayoutTestController::setSerializeHTTPLoads(bool)
 {
     // FIXME: Implement if needed for https://bugs.webkit.org/show_bug.cgi?id=50758.
@@ -735,11 +680,6 @@ void LayoutTestController::setMinimumTimerInterval(double)
 }
 
 void LayoutTestController::setTextDirection(JSStringRef)
-{
-    notImplemented();
-}
-
-void LayoutTestController::allowRoundingHacks()
 {
     notImplemented();
 }
@@ -897,3 +837,27 @@ void LayoutTestController::simulateDesktopNotificationClick(JSStringRef title)
 {
 }
 
+void LayoutTestController::resetPageVisibility()
+{
+    notImplemented();
+}
+
+void LayoutTestController::setPageVisibility(const char*)
+{
+    notImplemented();
+}
+
+void LayoutTestController::setAutomaticLinkDetectionEnabled(bool)
+{
+    notImplemented();
+}
+
+void LayoutTestController::sendWebIntentResponse(JSStringRef)
+{
+    notImplemented();
+}
+
+void LayoutTestController::deliverWebIntent(JSStringRef, JSStringRef, JSStringRef)
+{
+    notImplemented();
+}

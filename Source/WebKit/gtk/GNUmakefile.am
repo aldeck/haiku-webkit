@@ -114,6 +114,7 @@ webkitgtk_static_h_api += \
 	$(srcdir)/Source/WebKit/gtk/webkit/webkitdownload.h \
 	$(srcdir)/Source/WebKit/gtk/webkit/webkiterror.h \
 	$(srcdir)/Source/WebKit/gtk/webkit/webkitfavicondatabase.h \
+	$(srcdir)/Source/WebKit/gtk/webkit/webkitfilechooserrequest.h \
 	$(srcdir)/Source/WebKit/gtk/webkit/webkitgeolocationpolicydecision.h \
 	$(srcdir)/Source/WebKit/gtk/webkit/webkitglobals.h \
 	$(srcdir)/Source/WebKit/gtk/webkit/webkithittestresult.h \
@@ -178,6 +179,7 @@ webkitgtk_sources += \
 	Source/WebKit/gtk/WebCoreSupport/AcceleratedCompositingContext.h \
 	Source/WebKit/gtk/WebCoreSupport/AcceleratedCompositingContextClutter.cpp \
 	Source/WebKit/gtk/WebCoreSupport/AcceleratedCompositingContextGL.cpp \
+	Source/WebKit/gtk/WebCoreSupport/AcceleratedCompositingContextCairo.cpp \
 	Source/WebKit/gtk/WebCoreSupport/AssertMatchingEnums.cpp \
 	Source/WebKit/gtk/WebCoreSupport/ChromeClientGtk.cpp \
 	Source/WebKit/gtk/WebCoreSupport/ChromeClientGtk.h \
@@ -212,12 +214,17 @@ webkitgtk_sources += \
 	Source/WebKit/gtk/WebCoreSupport/PlatformStrategiesGtk.cpp \
 	Source/WebKit/gtk/WebCoreSupport/UserMediaClientGtk.cpp \
 	Source/WebKit/gtk/WebCoreSupport/UserMediaClientGtk.h \
+	Source/WebKit/gtk/WebCoreSupport/WebViewInputMethodFilter.cpp \
+	Source/WebKit/gtk/WebCoreSupport/WebViewInputMethodFilter.h \
 	Source/WebKit/gtk/webkit/webkitapplicationcache.cpp \
 	Source/WebKit/gtk/webkit/webkitdownload.cpp \
 	Source/WebKit/gtk/webkit/webkitdownloadprivate.h \
 	Source/WebKit/gtk/webkit/webkiterror.cpp \
 	Source/WebKit/gtk/webkit/webkitfavicondatabase.cpp \
 	Source/WebKit/gtk/webkit/webkitfavicondatabaseprivate.h \
+	Source/WebKit/gtk/webkit/webkitfilechooserrequest.cpp \
+	Source/WebKit/gtk/webkit/webkitfilechooserrequest.h \
+	Source/WebKit/gtk/webkit/webkitfilechooserrequestprivate.h \
 	Source/WebKit/gtk/webkit/webkitgeolocationpolicydecision.cpp \
 	Source/WebKit/gtk/webkit/webkitgeolocationpolicydecisionprivate.h \
 	Source/WebKit/gtk/webkit/webkitglobals.cpp \

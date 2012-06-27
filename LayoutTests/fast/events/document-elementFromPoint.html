@@ -126,6 +126,10 @@ th { height: 30px; }
     top: 670px;
     color: gray;
 }
+
+#subpixel-test {
+    width: 4.5px;
+}
 </style>
 </head>
 <body>
@@ -195,9 +199,11 @@ th { height: 30px; }
 <div id="results"></div>
 <div id="mouse-position"></div>
 
+<!-- Test for subpixel support -->
+<div id="subpixel-test"></div>
 <script>
 // Debug mode.
-if (!window.layoutTestController) {
+if (!window.testRunner) {
     document.body.onmousemove = function(e) {
         var resultBox = document.getElementById('mouse-position');
         var offsets = 'element id: ' + e.target.id + '<br> clientX: ' + e.clientX + ' clientY: ' + e.clientY + '<br>';
@@ -239,14 +245,17 @@ function clicked(event) {
     log(result);
 }
 
-if (window.layoutTestController) {
-    window.layoutTestController.dumpAsText();
-    window.layoutTestController.waitUntilDone();
+if (window.testRunner) {
+    window.testRunner.dumpAsText();
+    window.testRunner.waitUntilDone();
 }
 
 // Start the test.
 document.body.addEventListener('click', clicked, false);
 window.addEventListener('load', function() {
+    var r = document.getElementById('subpixel-test').getBoundingClientRect();
+    var hasSubpixelSupport = r.right - r.left == 4.5;
+
     setTimeout(function() {
         // Scroll body and inner overflow box.
         window.scrollTo(20, 100);
@@ -260,14 +269,14 @@ window.addEventListener('load', function() {
             dispatchEvent(40, 297, 'table-content', 15, 18);
             dispatchEvent(122, 407, 'transformed', 18, 15);
             dispatchEvent(573, 480, 'inside-overflow', 2, 9);
-            dispatchEvent(707, 174, 'in-columns', 88, 13);
+            dispatchEvent(707, 174, 'in-columns', hasSubpixelSupport ? 87 : 88, 13);
             dispatchEvent(241, 67, 'fixed', 41, 17);
             dispatchEvent(244, 102, 'fixed', 44, 52);
             dispatchEvent(388, 88, 'fixed', 188, 38);
 
             // End asynchronous test.
-            if (window.layoutTestController)
-                window.layoutTestController.notifyDone();            
+            if (window.testRunner)
+                window.testRunner.notifyDone();            
         }, 0);
     }, 0);
 }, false);

@@ -51,6 +51,11 @@ ScriptObject ScriptProfiler::objectByHeapObjectId(unsigned)
     return ScriptObject();
 }
 
+unsigned ScriptProfiler::getHeapObjectId(const ScriptValue&)
+{
+    return 0;
+}
+
 void ScriptProfiler::start(ScriptState* state, const String& title)
 {
     JSC::Profiler::profiler()->startProfiling(state, stringToUString(title));

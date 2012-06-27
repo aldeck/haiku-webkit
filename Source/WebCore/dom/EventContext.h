@@ -27,13 +27,14 @@
 #ifndef EventContext_h
 #define EventContext_h
 
+#include "EventTarget.h"
+#include "Node.h"
+#include "TreeScope.h"
 #include <wtf/RefPtr.h>
 
 namespace WebCore {
 
-class EventTarget;
 class Event;
-class Node;
 
 class EventContext {
 public:
@@ -42,13 +43,20 @@ public:
 
     Node* node() const;
     EventTarget* target() const;
+    EventTarget* relatedTarget() const;
     bool currentTargetSameAsTarget() const;
     void handleLocalEvents(Event*) const;
+    void setRelatedTarget(PassRefPtr<EventTarget>);
 
 private:
+#ifndef NDEBUG
+    bool isUnreachableNode(EventTarget*);
+    bool isReachable(Node*);
+#endif
     RefPtr<Node> m_node;
     RefPtr<EventTarget> m_currentTarget;
     RefPtr<EventTarget> m_target;
+    RefPtr<EventTarget> m_relatedTarget;
 };
 
 inline Node* EventContext::node() const
@@ -65,6 +73,36 @@ inline bool EventContext::currentTargetSameAsTarget() const
 {
     return m_currentTarget.get() == m_target.get();
 }
+
+inline EventTarget* EventContext::relatedTarget() const
+{
+    return m_relatedTarget.get();
+}
+
+inline void EventContext::setRelatedTarget(PassRefPtr<EventTarget> relatedTarget)
+{
+    ASSERT(!isUnreachableNode(relatedTarget.get()));
+    m_relatedTarget = relatedTarget;
+}
+
+#ifndef NDEBUG
+inline bool EventContext::isUnreachableNode(EventTarget* target)
+{
+    // FIXME: Checks also for SVG elements.
+    return target && target->toNode() && !target->toNode()->isSVGElement() && !isReachable(target->toNode());
+}
+
+inline bool EventContext::isReachable(Node* target)
+{
+    ASSERT(target);
+    TreeScope* targetScope = target->treeScope();
+    for (TreeScope* scope = m_node->treeScope(); scope; scope = scope->parentTreeScope()) {
+        if (scope == targetScope)
+            return true;
+    }
+    return false;
+}
+#endif
 
 }
 

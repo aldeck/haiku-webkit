@@ -22,6 +22,7 @@
 #define V8TestCustomNamedGetter_h
 
 #include "TestCustomNamedGetter.h"
+#include "V8Binding.h"
 #include "V8DOMWrapper.h"
 #include "WrapperTypeInfo.h"
 #include <v8.h>
@@ -42,6 +43,7 @@ public:
     }
     inline static v8::Handle<v8::Object> wrap(TestCustomNamedGetter*, v8::Isolate* = 0);
     static void derefObject(void*);
+    static void visitDOMWrapper(DOMDataStore*, void*, v8::Persistent<v8::Object>);
     static WrapperTypeInfo info;
     static v8::Handle<v8::Value> namedPropertyGetter(v8::Local<v8::String>, const v8::AccessorInfo&);
     static const int internalFieldCount = v8DefaultWrapperInternalFieldCount + 0;
@@ -51,7 +53,7 @@ private:
 
 v8::Handle<v8::Object> V8TestCustomNamedGetter::wrap(TestCustomNamedGetter* impl, v8::Isolate* isolate)
 {
-        v8::Handle<v8::Object> wrapper = getDOMObjectMap().get(impl);
+        v8::Handle<v8::Object> wrapper = getDOMObjectMap(isolate).get(impl);
         if (!wrapper.IsEmpty())
             return wrapper;
     return V8TestCustomNamedGetter::wrapSlow(impl, isolate);
@@ -60,7 +62,7 @@ v8::Handle<v8::Object> V8TestCustomNamedGetter::wrap(TestCustomNamedGetter* impl
 inline v8::Handle<v8::Value> toV8(TestCustomNamedGetter* impl, v8::Isolate* isolate = 0)
 {
     if (!impl)
-        return v8::Null();
+        return v8NullWithCheck(isolate);
     return V8TestCustomNamedGetter::wrap(impl, isolate);
 }
 inline v8::Handle<v8::Value> toV8(PassRefPtr< TestCustomNamedGetter > impl, v8::Isolate* isolate = 0)

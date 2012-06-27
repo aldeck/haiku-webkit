@@ -38,10 +38,12 @@ void webkitWebViewSetTitle(WebKitWebView*, const CString&);
 void webkitWebViewUpdateURI(WebKitWebView*);
 WKPageRef webkitWebViewCreateNewPage(WebKitWebView*, WKDictionaryRef wkWindowFeatures);
 void webkitWebViewReadyToShowPage(WebKitWebView*);
+void webkitWebViewRunAsModal(WebKitWebView*);
 void webkitWebViewClosePage(WebKitWebView*);
 void webkitWebViewRunJavaScriptAlert(WebKitWebView*, const CString& message);
 bool webkitWebViewRunJavaScriptConfirm(WebKitWebView*, const CString& message);
 WKStringRef webkitWebViewRunJavaScriptPrompt(WebKitWebView*, const CString& message, const CString& defaultText);
+void webkitWebViewMakePermissionRequest(WebKitWebView*, WebKitPermissionRequest*);
 void webkitWebViewMakePolicyDecision(WebKitWebView*, WebKitPolicyDecisionType, WebKitPolicyDecision*);
 void webkitWebViewMouseTargetChanged(WebKitWebView*, WKHitTestResultRef, unsigned modifiers);
 void webkitWebViewPrintFrame(WebKitWebView*, WKFrameRef);
@@ -52,5 +54,6 @@ void webkitWebViewRemoveLoadingWebResource(WebKitWebView*, uint64_t resourceIden
 WebKitWebResource* webkitWebViewResourceLoadFinished(WebKitWebView*, uint64_t resourceIdentifier);
 bool webkitWebViewEnterFullScreen(WebKitWebView*);
 bool webkitWebViewLeaveFullScreen(WebKitWebView*);
+void webkitWebViewPopulateContextMenu(WebKitWebView*, WKArrayRef proposedMenu, WKHitTestResultRef);
 
 #endif // WebKitWebViewPrivate_h

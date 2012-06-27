@@ -5,7 +5,7 @@ On success, you will see a series of "PASS" messages, followed by "TEST COMPLETE
 
 indexedDB = self.indexedDB || self.webkitIndexedDB || self.mozIndexedDB || self.msIndexedDB || self.OIndexedDB;
 
-indexedDB.open(name, description)
+indexedDB.open(name)
 openSuccess():
 db = null;
 db = request.result;
@@ -18,7 +18,7 @@ objectStore = db.createObjectStore('foo', { keyPath: 'key', autoIncrement: true 
 index = objectStore.createIndex('foo', 'index');
 event.target.transaction.oncomplete = addRecord;
 addRecord():
-objectStore = db.transaction('foo', IDBTransaction.READ_WRITE).objectStore('foo');
+objectStore = db.transaction('foo', 'readwrite').objectStore('foo');
 data = { key: 5, index: 10 };
 request = objectStore.add(data);
 addSuccess():
@@ -35,7 +35,7 @@ checkRetrievedKey():
 PASS record.key is data.key
 PASS record.index is data.index
 deleteRecord():
-objectStore = db.transaction('foo', IDBTransaction.READ_WRITE).objectStore('foo');
+objectStore = db.transaction('foo', 'readwrite').objectStore('foo');
 request = objectStore.delete(data.key);
 deleteSuccess():
 PASS successfullyParsed is true

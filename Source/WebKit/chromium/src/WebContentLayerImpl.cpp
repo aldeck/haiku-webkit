@@ -30,9 +30,7 @@
 #include "platform/WebRect.h"
 #include "GraphicsContext.h"
 #include "platform/WebCanvas.h"
-#if WEBKIT_USING_SKIA
 #include "PlatformContextSkia.h"
-#endif
 
 using namespace WebCore;
 
@@ -55,25 +53,13 @@ WebContentLayerImpl::~WebContentLayerImpl()
     clearDelegate();
 }
 
-void WebContentLayerImpl::setDrawsContent(bool drawsContent)
-{
-    setIsDrawable(drawsContent);
-}
-
-void WebContentLayerImpl::paintContents(GraphicsContext& gc, const IntRect& clip)
+void WebContentLayerImpl::paintContents(SkCanvas* canvas, const IntRect& clip, IntRect& opaque)
 {
     if (!m_contentClient)
         return;
-#if WEBKIT_USING_SKIA
-    WebCanvas* canvas = gc.platformContext()->canvas();
-#elif WEBKIT_USING_CG
-    WebCanvas* canvas = gc.platformContext();
-#endif
-    m_contentClient->paintContents(canvas, WebRect(clip));
-}
-
-void WebContentLayerImpl::didScroll(const WebCore::IntSize&)
-{
+    WebRect webOpaque;
+    m_contentClient->paintContents(canvas, WebRect(clip), webOpaque);
+    opaque = webOpaque;
 }
 
 } // namespace WebKit

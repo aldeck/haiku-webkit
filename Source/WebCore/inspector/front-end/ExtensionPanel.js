@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2011 Google Inc. All rights reserved.
+ * Copyright (C) 2012 Google Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -39,6 +39,7 @@
 WebInspector.ExtensionView = function(id, parent, src, className)
 {
     WebInspector.View.call(this);
+    this.element.className = "fill";
 
     this._id = id;
     this._iframe = document.createElement("iframe");
@@ -146,25 +147,25 @@ WebInspector.ExtensionPanel.prototype = {
 
     searchCanceled: function(startingNewSearch)
     {
-        WebInspector.extensionServer.notifySearchAction(this._id, "cancelSearch");
+        WebInspector.extensionServer.notifySearchAction(this._id, WebInspector.extensionAPI.panels.SearchAction.CancelSearch);
         WebInspector.Panel.prototype.searchCanceled.apply(this, arguments);
     },
 
     performSearch: function(query)
     {
-        WebInspector.extensionServer.notifySearchAction(this._id, "performSearch", query);
+        WebInspector.extensionServer.notifySearchAction(this._id, WebInspector.extensionAPI.panels.SearchAction.PerformSearch, query);
         WebInspector.Panel.prototype.performSearch.apply(this, arguments);
     },
 
     jumpToNextSearchResult: function()
     {
-        WebInspector.extensionServer.notifySearchAction(this._id, "nextSearchResult");
+        WebInspector.extensionServer.notifySearchAction(this._id, WebInspector.extensionAPI.panels.SearchAction.NextSearchResult);
         WebInspector.Panel.prototype.jumpToNextSearchResult.call(this);
     },
 
     jumpToPreviousSearchResult: function()
     {
-        WebInspector.extensionServer.notifySearchAction(this._id, "previousSearchResult");
+        WebInspector.extensionServer.notifySearchAction(this._id, WebInspector.extensionAPI.panels.SearchAction.PreviousSearchResult);
         WebInspector.Panel.prototype.jumpToPreviousSearchResult.call(this);
     },
 
@@ -245,10 +246,10 @@ WebInspector.ExtensionSidebarPane.prototype = {
      * @param {string} title
      * @param {function(?string=)} callback
      */
-    setExpression: function(expression, title, callback)
+    setExpression: function(expression, title, evaluateOptions, securityOrigin, callback)
     {
         this._createObjectPropertiesView();
-        RuntimeAgent.evaluate(expression, "extension-watch", true, undefined, undefined, undefined, this._onEvaluate.bind(this, title, callback));
+        return WebInspector.extensionServer.evaluate(expression, true, false, evaluateOptions, securityOrigin, this._onEvaluate.bind(this, title, callback));
     },
 
     /**
@@ -263,7 +264,9 @@ WebInspector.ExtensionSidebarPane.prototype = {
         if (this._extensionView)
             this._extensionView.detach(true);
 
-        this._extensionView = new WebInspector.ExtensionView(this._id, this.bodyElement, url, "extension");
+        this._extensionView = new WebInspector.ExtensionView(this._id, this.bodyElement, url, "extension fill");
+        if (!this.bodyElement.style.height)
+            this.setHeight("150px");
     },
 
     /**

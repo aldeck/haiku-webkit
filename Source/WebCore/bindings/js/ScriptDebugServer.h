@@ -83,14 +83,19 @@ public:
 
     bool canSetScriptSource();
     bool setScriptSource(const String& sourceID, const String& newContent, bool preview, String* error, ScriptValue* newCallFrames, ScriptObject* result);
+    void updateCallStack(ScriptValue* callFrame);
 
     bool causesRecompilation() { return true; }
-    bool supportsNativeBreakpoints() { return false; }
+    bool supportsSeparateScriptCompilationAndExecution() { return false; }
 
     void recompileAllJSFunctionsSoon();
     virtual void recompileAllJSFunctions(Timer<ScriptDebugServer>* = 0) = 0;
 
     bool isPaused() { return m_paused; }
+
+    void compileScript(ScriptState*, const String& expression, const String& sourceURL, String* scriptId, String* exceptionMessage);
+    void clearCompiledScripts();
+    void runScript(ScriptState*, const String& scriptId, ScriptValue* result, bool* wasThrown, String* exceptionMessage);
 
     class Task {
     public:
@@ -133,11 +138,9 @@ protected:
     virtual void didExecuteProgram(const JSC::DebuggerCallFrame&, intptr_t sourceID, int lineno);
     virtual void didReachBreakpoint(const JSC::DebuggerCallFrame&, intptr_t sourceID, int lineno);
 
-    typedef HashMap<Page*, ListenerSet*> PageListenersMap;
     typedef HashMap<long, ScriptBreakpoint> LineToBreakpointMap;
     typedef HashMap<intptr_t, LineToBreakpointMap> SourceIdToBreakpointsMap;
 
-    PageListenersMap m_pageListenersMap;
     bool m_callingListeners;
     PauseOnExceptionsState m_pauseOnExceptionsState;
     bool m_pauseOnNextStatement;

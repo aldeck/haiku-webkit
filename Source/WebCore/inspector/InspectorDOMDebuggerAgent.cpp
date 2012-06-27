@@ -75,11 +75,10 @@ PassOwnPtr<InspectorDOMDebuggerAgent> InspectorDOMDebuggerAgent::create(Instrume
     return adoptPtr(new InspectorDOMDebuggerAgent(instrumentingAgents, inspectorState, domAgent, debuggerAgent, inspectorAgent));
 }
 
-InspectorDOMDebuggerAgent::InspectorDOMDebuggerAgent(InstrumentingAgents* instrumentingAgents, InspectorState* inspectorState, InspectorDOMAgent* domAgent, InspectorDebuggerAgent* debuggerAgent, InspectorAgent* inspectorAgent)
+InspectorDOMDebuggerAgent::InspectorDOMDebuggerAgent(InstrumentingAgents* instrumentingAgents, InspectorState* inspectorState, InspectorDOMAgent* domAgent, InspectorDebuggerAgent* debuggerAgent, InspectorAgent*)
     : InspectorBaseAgent<InspectorDOMDebuggerAgent>("DOMDebugger", instrumentingAgents, inspectorState)
     , m_domAgent(domAgent)
     , m_debuggerAgent(debuggerAgent)
-    , m_inspectorAgent(inspectorAgent)
 {
     m_debuggerAgent->setListener(this);
 }
@@ -315,8 +314,10 @@ void InspectorDOMDebuggerAgent::descriptionForDOMEvent(Node* target, int breakpo
             breakpointOwner = InspectorDOMAgent::innerParentNode(target);
         ASSERT(breakpointOwner);
         while (!(m_domBreakpoints.get(breakpointOwner) & (1 << breakpointType))) {
-            breakpointOwner = InspectorDOMAgent::innerParentNode(breakpointOwner);
-            ASSERT(breakpointOwner);
+            Node* parentNode = InspectorDOMAgent::innerParentNode(breakpointOwner);
+            if (!parentNode)
+                break;
+            breakpointOwner = parentNode;
         }
 
         if (breakpointType == SubtreeModified)

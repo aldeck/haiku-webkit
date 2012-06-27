@@ -37,6 +37,7 @@ class DOMStringList;
 class IDBCallbacks;
 class IDBIndexBackendInterface;
 class IDBKey;
+class IDBKeyPath;
 class IDBKeyRange;
 class IDBTransactionBackendInterface;
 class SerializedScriptValue;
@@ -48,8 +49,9 @@ public:
     virtual ~IDBObjectStoreBackendInterface() { }
 
     virtual String name() const = 0;
-    virtual String keyPath() const = 0;
+    virtual IDBKeyPath keyPath() const = 0;
     virtual PassRefPtr<DOMStringList> indexNames() const = 0;
+    virtual bool autoIncrement() const = 0;
 
     virtual void get(PassRefPtr<IDBKeyRange>, PassRefPtr<IDBCallbacks>, IDBTransactionBackendInterface*, ExceptionCode&) = 0;
 
@@ -59,12 +61,11 @@ public:
         CursorUpdate
     };
     virtual void put(PassRefPtr<SerializedScriptValue>, PassRefPtr<IDBKey>, PutMode, PassRefPtr<IDBCallbacks>, IDBTransactionBackendInterface*, ExceptionCode&) = 0;
-    virtual void deleteFunction(PassRefPtr<IDBKey>, PassRefPtr<IDBCallbacks>, IDBTransactionBackendInterface*, ExceptionCode&) = 0;
     virtual void deleteFunction(PassRefPtr<IDBKeyRange>, PassRefPtr<IDBCallbacks>, IDBTransactionBackendInterface*, ExceptionCode&) = 0;
 
     virtual void clear(PassRefPtr<IDBCallbacks>, IDBTransactionBackendInterface*, ExceptionCode&) = 0;
 
-    virtual PassRefPtr<IDBIndexBackendInterface> createIndex(const String& name, const String& keyPath, bool unique, bool multiEntry, IDBTransactionBackendInterface*, ExceptionCode&) = 0;
+    virtual PassRefPtr<IDBIndexBackendInterface> createIndex(const String& name, const IDBKeyPath&, bool unique, bool multiEntry, IDBTransactionBackendInterface*, ExceptionCode&) = 0;
     virtual PassRefPtr<IDBIndexBackendInterface> index(const String& name, ExceptionCode&) = 0;
     virtual void deleteIndex(const String& name, IDBTransactionBackendInterface*, ExceptionCode&) = 0;
 

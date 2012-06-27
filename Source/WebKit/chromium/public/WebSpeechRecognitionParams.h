@@ -26,6 +26,7 @@
 #ifndef WebSpeechRecognitionParams_h
 #define WebSpeechRecognitionParams_h
 
+#include "WebSecurityOrigin.h"
 #include "WebSpeechGrammar.h"
 #include "platform/WebString.h"
 #include "platform/WebVector.h"
@@ -36,21 +37,27 @@ class WebSpeechGrammar;
 
 class WebSpeechRecognitionParams {
 public:
-    WebSpeechRecognitionParams(const WebVector<WebSpeechGrammar>& grammars, const WebString& language, bool continuous)
+    WebSpeechRecognitionParams(const WebVector<WebSpeechGrammar>& grammars, const WebString& language, bool continuous, unsigned long maxAlternatives, const WebSecurityOrigin& origin)
         : m_grammars(grammars)
         , m_language(language)
         , m_continuous(continuous)
+        , m_maxAlternatives(maxAlternatives)
+        , m_origin(origin)
     {
     }
 
     const WebVector<WebSpeechGrammar>& grammars() const { return m_grammars; }
     const WebString& language() const { return m_language; }
     bool continuous() const { return m_continuous; }
+    unsigned long maxAlternatives() const { return m_maxAlternatives; }
+    const WebSecurityOrigin& origin() const { return m_origin; }
 
 private:
     WebVector<WebSpeechGrammar> m_grammars;
     WebString m_language;
     bool m_continuous;
+    unsigned long m_maxAlternatives;
+    WebSecurityOrigin m_origin;
 };
 
 } // namespace WebKit

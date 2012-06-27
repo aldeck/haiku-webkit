@@ -60,7 +60,7 @@ void compileOSRExit(ExecState* exec)
     for (CodeOrigin codeOrigin = exit.m_codeOrigin; codeOrigin.inlineCallFrame; codeOrigin = codeOrigin.inlineCallFrame->caller) {
         static_cast<FunctionExecutable*>(codeOrigin.inlineCallFrame->executable.get())
             ->baselineCodeBlockFor(codeOrigin.inlineCallFrame->isCall ? CodeForCall : CodeForConstruct)
-            ->jitCompile(*globalData);
+            ->jitCompile(exec);
     }
     
     SpeculationRecovery* recovery = 0;
@@ -72,18 +72,18 @@ void compileOSRExit(ExecState* exec)
 #endif
 
     {
-        AssemblyHelpers jit(globalData, codeBlock);
+        CCallHelpers jit(globalData, codeBlock);
         OSRExitCompiler exitCompiler(jit);
 
         jit.jitAssertHasValidCallFrame();
         exitCompiler.compileExit(exit, recovery);
         
         LinkBuffer patchBuffer(*globalData, &jit, codeBlock);
-        exit.m_code = patchBuffer.finalizeCode();
-
-#if DFG_ENABLE(DEBUG_VERBOSE)
-        dataLog("OSR exit code at [%p, %p).\n", patchBuffer.debugAddress(), static_cast<char*>(patchBuffer.debugAddress()) + patchBuffer.debugSize());
-#endif
+        exit.m_code = FINALIZE_CODE(
+            patchBuffer,
+            ("DFG OSR exit #%u (bc#%u, @%u, %s) from CodeBlock %p",
+             exitIndex, exit.m_codeOrigin.bytecodeIndex, exit.m_nodeIndex,
+             exitKindToString(exit.m_kind), codeBlock));
     }
     
     {

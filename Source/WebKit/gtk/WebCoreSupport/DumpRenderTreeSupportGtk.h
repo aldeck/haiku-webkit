@@ -61,11 +61,9 @@ public:
     static GSList* getFrameChildren(WebKitWebFrame*);
     static WTF::CString getInnerText(WebKitWebFrame*);
     static WTF::CString dumpRenderTree(WebKitWebFrame*);
-    static WTF::CString counterValueForElementById(WebKitWebFrame*, const char* id);
     static int pageNumberForElementById(WebKitWebFrame*, const char* id, float pageWidth, float pageHeight);
     static int numberOfPagesForFrame(WebKitWebFrame*, float pageWidth, float pageHeight);
     static WTF::CString pageProperty(WebKitWebFrame*, const char* propertyName, int pageNumber);
-    static bool isPageBoxVisible(WebKitWebFrame*, int pageNumber);
     static WTF::CString pageSizeAndMarginsInPixels(WebKitWebFrame*, int pageNumber, int width, int height, int marginTop, int marginRight, int marginBottom, int marginLeft);
     static void addUserStyleSheet(WebKitWebFrame*, const char* sourceCode, bool allFrames);
     static guint getPendingUnloadEventCount(WebKitWebFrame*);
@@ -73,8 +71,6 @@ public:
     static bool pauseTransition(WebKitWebFrame*, const char* name, double time, const char* element);
     static WTF::CString markerTextForListItem(WebKitWebFrame*, JSContextRef, JSValueRef nodeObject);
     static unsigned int numberOfActiveAnimations(WebKitWebFrame*);
-    static void suspendAnimations(WebKitWebFrame*);
-    static void resumeAnimations(WebKitWebFrame*);
     static void clearMainFrameName(WebKitWebFrame*);
     static AtkObject* getFocusedAccessibleElement(WebKitWebFrame*);
     static AtkObject* getRootAccessibleElement(WebKitWebFrame*);
@@ -93,11 +89,11 @@ public:
     static void setMinimumTimerInterval(WebKitWebView*, double);
     static void rectangleForSelection(WebKitWebFrame*, cairo_rectangle_int_t*);
     static void scalePageBy(WebKitWebView*, float, float, float);
+    static void setDefersLoading(WebKitWebView*, bool);
     static void setSmartInsertDeleteEnabled(WebKitWebView*, bool);
+    static void forceWebViewPaint(WebKitWebView*);
 
     // Accessibility
-    static void incrementAccessibilityValue(AtkObject*);
-    static void decrementAccessibilityValue(AtkObject*);
     static WTF::CString accessibilityHelpText(AtkObject*);
 
     // TextInputController
@@ -129,6 +125,12 @@ public:
 
     static void deliverAllMutationsIfNecessary();
     static void setDomainRelaxationForbiddenForURLScheme(bool forbidden, const char* urlScheme);
+    static void setSerializeHTTPLoads(bool enabled);
+
+    static void setTracksRepaints(WebKitWebFrame*, bool tracks);
+    static bool isTrackingRepaints(WebKitWebFrame*);
+    static GSList* trackedRepaintRects(WebKitWebFrame*);
+    static void resetTrackedRepaints(WebKitWebFrame*);
 
 private:
     static bool s_drtRun;

@@ -39,23 +39,24 @@ namespace WebCore {
 class GLContextGLX : public GLContext {
     WTF_MAKE_NONCOPYABLE(GLContextGLX);
 public:
-    static GLContextGLX* createContext(XID, GLXContext sharingContext = 0);
-    static GLContextGLX* createWindowContext(XID window, GLXContext sharingContext);
-    static GLContextGLX* createPbufferContext(GLXContext sharingContext);
-    static GLContextGLX* createPixmapContext(GLXContext sharingContext);
-    static void removeActiveContext(GLContext*);
+    static PassOwnPtr<GLContextGLX> createContext(XID, GLContext* sharingContext = 0);
+    static PassOwnPtr<GLContextGLX> createWindowContext(XID window, GLContext* sharingContext);
 
     virtual ~GLContextGLX();
-    virtual GLContext* createOffscreenSharingContext();
     virtual bool makeContextCurrent();
     virtual void swapBuffers();
     virtual bool canRenderToDefaultFramebuffer();
+    virtual IntSize defaultFrameBufferSize();
 
 #if ENABLE(WEBGL)
     virtual PlatformGraphicsContext3D platformContext();
 #endif
 
 private:
+    static PassOwnPtr<GLContextGLX> createPbufferContext(GLXContext sharingContext);
+    static PassOwnPtr<GLContextGLX> createPixmapContext(GLXContext sharingContext);
+    static void removeActiveContext(GLContext*);
+
     static void addActiveContext(GLContextGLX*);
     static void cleanupActiveContextsAtExit();
 
@@ -63,7 +64,6 @@ private:
     GLContextGLX(GLXContext, Pixmap, GLXPixmap);
 
     GLXContext m_context;
-    Display* m_display;
     XID m_window;
     GLXPbuffer m_pbuffer;
     Pixmap m_pixmap;

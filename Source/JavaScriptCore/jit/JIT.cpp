@@ -96,7 +96,7 @@ JIT::JIT(JSGlobalData* globalData, CodeBlock* codeBlock)
 #if ENABLE(DFG_JIT)
 void JIT::emitOptimizationCheck(OptimizationCheckKind kind)
 {
-    if (!shouldEmitProfiling())
+    if (!canBeOptimized())
         return;
     
     Jump skipOptimize = branchAdd32(Signed, TrustedImm32(kind == LoopOptimizationCheck ? Options::executionCounterIncrementForLoop : Options::executionCounterIncrementForReturn), AbsoluteAddress(m_codeBlock->addressOfJITExecuteCounter()));
@@ -242,7 +242,6 @@ void JIT::privateCompileMainPass()
         DEFINE_OP(op_call_varargs)
         DEFINE_OP(op_catch)
         DEFINE_OP(op_construct)
-        DEFINE_OP(op_get_callee)
         DEFINE_OP(op_create_this)
         DEFINE_OP(op_convert_this)
         DEFINE_OP(op_init_lazy_reg)
@@ -260,6 +259,7 @@ void JIT::privateCompileMainPass()
         DEFINE_OP(op_get_by_val)
         DEFINE_OP(op_get_argument_by_val)
         DEFINE_OP(op_get_by_pname)
+        DEFINE_OP(op_get_global_var_watchable)
         DEFINE_OP(op_get_global_var)
         DEFINE_OP(op_get_pnames)
         DEFINE_OP(op_get_scoped_var)
@@ -325,6 +325,7 @@ void JIT::privateCompileMainPass()
         DEFINE_OP(op_put_by_val)
         DEFINE_OP(op_put_getter_setter)
         DEFINE_OP(op_put_global_var)
+        DEFINE_OP(op_put_global_var_check)
         DEFINE_OP(op_put_scoped_var)
         DEFINE_OP(op_resolve)
         DEFINE_OP(op_resolve_base)
@@ -418,7 +419,7 @@ void JIT::privateCompileSlowCases()
         
 #if ENABLE(VALUE_PROFILER)
         RareCaseProfile* rareCaseProfile = 0;
-        if (m_canBeOptimized)
+        if (shouldEmitProfiling())
             rareCaseProfile = m_codeBlock->addRareCaseProfile(m_bytecodeOffset);
 #endif
 
@@ -482,6 +483,7 @@ void JIT::privateCompileSlowCases()
         case op_put_by_id_transition_normal:
         DEFINE_SLOWCASE_OP(op_put_by_id)
         DEFINE_SLOWCASE_OP(op_put_by_val)
+        DEFINE_SLOWCASE_OP(op_put_global_var_check);
         DEFINE_SLOWCASE_OP(op_resolve_global)
         DEFINE_SLOWCASE_OP(op_resolve_global_dynamic)
         DEFINE_SLOWCASE_OP(op_rshift)
@@ -498,7 +500,7 @@ void JIT::privateCompileSlowCases()
         ASSERT_WITH_MESSAGE(firstTo == (iter - 1)->to, "Too many jumps linked in slow case codegen.");
         
 #if ENABLE(VALUE_PROFILER)
-        if (m_canBeOptimized)
+        if (shouldEmitProfiling())
             add32(TrustedImm32(1), AbsoluteAddress(&rareCaseProfile->m_counter));
 #endif
 
@@ -566,7 +568,24 @@ JITCode JIT::privateCompile(CodePtr* functionEntryArityCheck, JITCompilationEffo
 #endif
     
 #if ENABLE(VALUE_PROFILER)
-    m_canBeOptimized = m_codeBlock->canCompileWithDFG();
+    DFG::CapabilityLevel level = m_codeBlock->canCompileWithDFG();
+    switch (level) {
+    case DFG::CannotCompile:
+        m_canBeOptimized = false;
+        m_shouldEmitProfiling = false;
+        break;
+    case DFG::ShouldProfile:
+        m_canBeOptimized = false;
+        m_shouldEmitProfiling = true;
+        break;
+    case DFG::CanCompile:
+        m_canBeOptimized = true;
+        m_shouldEmitProfiling = true;
+        break;
+    default:
+        ASSERT_NOT_REACHED();
+        break;
+    }
 #endif
 
     // Just add a little bit of randomness to the codegen
@@ -620,7 +639,7 @@ JITCode JIT::privateCompile(CodePtr* functionEntryArityCheck, JITCompilationEffo
     Label functionBody = label();
     
 #if ENABLE(VALUE_PROFILER)
-    if (m_canBeOptimized)
+    if (canBeOptimized())
         add32(TrustedImm32(1), AbsoluteAddress(&m_codeBlock->m_executionEntryCount));
 #endif
 
@@ -699,11 +718,9 @@ JITCode JIT::privateCompile(CodePtr* functionEntryArityCheck, JITCompilationEffo
             patchBuffer.link(iter->from, FunctionPtr(iter->to));
     }
 
-    if (m_codeBlock->needsCallReturnIndices()) {
-        m_codeBlock->callReturnIndexVector().reserveCapacity(m_calls.size());
-        for (Vector<CallRecord>::iterator iter = m_calls.begin(); iter != m_calls.end(); ++iter)
-            m_codeBlock->callReturnIndexVector().append(CallReturnOffsetToBytecodeOffset(patchBuffer.returnAddressOffset(iter->from), iter->bytecodeOffset));
-    }
+    m_codeBlock->callReturnIndexVector().reserveCapacity(m_calls.size());
+    for (Vector<CallRecord>::iterator iter = m_calls.begin(); iter != m_calls.end(); ++iter)
+        m_codeBlock->callReturnIndexVector().append(CallReturnOffsetToBytecodeOffset(patchBuffer.returnAddressOffset(iter->from), iter->bytecodeOffset));
 
     m_codeBlock->setNumberOfStructureStubInfos(m_propertyAccessCompilationInfo.size());
     for (unsigned i = 0; i < m_propertyAccessCompilationInfo.size(); ++i)
@@ -744,11 +761,14 @@ JITCode JIT::privateCompile(CodePtr* functionEntryArityCheck, JITCompilationEffo
     if (m_codeBlock->codeType() == FunctionCode && functionEntryArityCheck)
         *functionEntryArityCheck = patchBuffer.locationOf(arityCheck);
     
-    CodeRef result = patchBuffer.finalizeCode();
+    CodeRef result = FINALIZE_CODE(
+        patchBuffer, ("Baseline JIT code for CodeBlock %p", m_codeBlock));
     
     m_globalData->machineCodeBytesPerBytecodeWordForBaselineJIT.add(
         static_cast<double>(result.size()) /
         static_cast<double>(m_codeBlock->instructions().size()));
+    
+    m_codeBlock->shrinkToFit(CodeBlock::LateShrink);
     
 #if ENABLE(JIT_VERBOSE)
     dataLog("JIT generated code for %p at [%p, %p).\n", m_codeBlock, result.executableMemory()->start(), result.executableMemory()->end());

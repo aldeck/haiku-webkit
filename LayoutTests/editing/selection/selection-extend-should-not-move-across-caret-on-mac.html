@@ -15,9 +15,9 @@ of the word (which is windows/unix behavior).
 
 <script>
 function editingTest(behavior) {
-    if (window.layoutTestController) {
-        layoutTestController.dumpAsText();
-        layoutTestController.setEditingBehavior(behavior);
+    if (window.testRunner && window.internals) {
+        testRunner.dumpAsText();
+        internals.settings.setEditingBehavior(behavior);
     }
 
     function getSetCaretFunction(node, container, offset) {

@@ -410,7 +410,7 @@
 @property(readonly, retain) DOMHTMLFormElement *form;
 @property BOOL disabled;
 @property(copy) NSString *name;
-@property(readonly, copy) NSString *type;
+@property(copy) NSString *type;
 @property(copy) NSString *value;
 @property BOOL autofocus AVAILABLE_IN_WEBKIT_VERSION_4_0;
 @property(readonly) BOOL willValidate AVAILABLE_IN_WEBKIT_VERSION_4_0;
@@ -622,7 +622,7 @@
 @property BOOL autofocus AVAILABLE_IN_WEBKIT_VERSION_4_0;
 @property BOOL multiple AVAILABLE_IN_WEBKIT_VERSION_4_0;
 @property(readonly) BOOL willValidate AVAILABLE_IN_WEBKIT_VERSION_4_0;
-@property(readonly, retain) DOMFileList *files AVAILABLE_IN_WEBKIT_VERSION_4_0;
+@property(retain) DOMFileList *files AVAILABLE_IN_WEBKIT_VERSION_4_0;
 - (void)select;
 - (void)click;
 - (void)setSelectionRange:(int)start end:(int)end AVAILABLE_WEBKIT_VERSION_3_0_AND_LATER;

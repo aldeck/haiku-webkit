@@ -44,6 +44,15 @@ using namespace std;
 
 namespace WebCore {
 
+struct ExpectedSVGInlineTextBoxSize : public InlineTextBox {
+    float float1;
+    uint32_t bitfields : 5;
+    void* pointer;
+    Vector<SVGTextFragment> vector;
+};
+
+COMPILE_ASSERT(sizeof(SVGInlineTextBox) == sizeof(ExpectedSVGInlineTextBoxSize), SVGInlineTextBox_is_not_of_expected_size);
+
 SVGInlineTextBox::SVGInlineTextBox(RenderObject* object)
     : InlineTextBox(object)
     , m_logicalHeight(0)
@@ -422,7 +431,6 @@ TextRun SVGInlineTextBox::constructTextRun(RenderStyle* style, const SVGTextFrag
 
     TextRun run(text->characters() + fragment.characterOffset
                 , fragment.length
-                , false /* allowTabs */
                 , 0 /* xPos, only relevant with allowTabs=true */
                 , 0 /* padding, only relevant for justified text, not relevant for SVG */
                 , TextRun::AllowTrailingExpansion
@@ -730,7 +738,7 @@ FloatRect SVGInlineTextBox::calculateBoundaries() const
     return textRect;
 }
 
-bool SVGInlineTextBox::nodeAtPoint(const HitTestRequest& request, HitTestResult& result, const LayoutPoint& pointInContainer, const LayoutPoint& accumulatedOffset, LayoutUnit, LayoutUnit)
+bool SVGInlineTextBox::nodeAtPoint(const HitTestRequest& request, HitTestResult& result, const HitTestPoint& pointInContainer, const LayoutPoint& accumulatedOffset, LayoutUnit, LayoutUnit)
 {
     // FIXME: integrate with InlineTextBox::nodeAtPoint better.
     ASSERT(!isLineBreak());
@@ -743,8 +751,8 @@ bool SVGInlineTextBox::nodeAtPoint(const HitTestRequest& request, HitTestResult&
             FloatPoint boxOrigin(x(), y());
             boxOrigin.moveBy(accumulatedOffset);
             FloatRect rect(boxOrigin, size());
-            if (rect.intersects(result.rectForPoint(pointInContainer))) {
-                renderer()->updateHitTestResult(result, pointInContainer - toLayoutSize(accumulatedOffset));
+            if (pointInContainer.intersects(rect)) {
+                renderer()->updateHitTestResult(result, pointInContainer.point() - toLayoutSize(accumulatedOffset));
                 if (!result.addNodeToRectBasedTestResult(renderer()->node(), pointInContainer, rect))
                     return true;
              }

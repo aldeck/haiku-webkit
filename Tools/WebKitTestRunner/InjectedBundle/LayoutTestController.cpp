@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2010, 2011, 2012 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -52,40 +52,6 @@ namespace WTR {
 // Eventually it should be changed to match.
 const double LayoutTestController::waitToDumpWatchdogTimerInterval = 6;
 
-static JSValueRef propertyValue(JSContextRef context, JSObjectRef object, const char* propertyName)
-{
-    if (!object)
-        return 0;
-    JSRetainPtr<JSStringRef> propertyNameString(Adopt, JSStringCreateWithUTF8CString(propertyName));
-    JSValueRef exception;
-    return JSObjectGetProperty(context, object, propertyNameString.get(), &exception);
-}
-
-static JSObjectRef propertyObject(JSContextRef context, JSObjectRef object, const char* propertyName)
-{
-    JSValueRef value = propertyValue(context, object, propertyName);
-    if (!value || !JSValueIsObject(context, value))
-        return 0;
-    return const_cast<JSObjectRef>(value);
-}
-
-static JSObjectRef getElementById(WKBundleFrameRef frame, JSStringRef elementId)
-{
-    JSContextRef context = WKBundleFrameGetJavaScriptContext(frame);
-    JSObjectRef document = propertyObject(context, JSContextGetGlobalObject(context), "document");
-    if (!document)
-        return 0;
-    JSValueRef getElementById = propertyObject(context, document, "getElementById");
-    if (!getElementById || !JSValueIsObject(context, getElementById))
-        return 0;
-    JSValueRef elementIdValue = JSValueMakeString(context, elementId);
-    JSValueRef exception;
-    JSValueRef element = JSObjectCallAsFunction(context, const_cast<JSObjectRef>(getElementById), document, 1, &elementIdValue, &exception);
-    if (!element || !JSValueIsObject(context, element))
-        return 0;
-    return const_cast<JSObjectRef>(element);
-}
-
 PassRefPtr<LayoutTestController> LayoutTestController::create()
 {
     return adoptRef(new LayoutTestController);
@@ -102,6 +68,8 @@ LayoutTestController::LayoutTestController()
     , m_dumpTitleChanges(false)
     , m_dumpPixels(true)
     , m_dumpFullScreenCallbacks(false)
+    , m_dumpFrameLoadCallbacks(false)
+    , m_dumpProgressFinishedCallback(false)
     , m_waitToDump(false)
     , m_testRepaint(false)
     , m_testRepaintSweepHorizontally(false)
@@ -208,12 +176,6 @@ void LayoutTestController::suspendAnimations()
     WKBundleFrameSuspendAnimations(mainFrame);
 }
 
-void LayoutTestController::resumeAnimations()
-{
-    WKBundleFrameRef mainFrame = WKBundlePageGetMainFrame(InjectedBundle::shared().page()->page());
-    WKBundleFrameResumeAnimations(mainFrame);
-}
-
 JSRetainPtr<JSStringRef> LayoutTestController::layerTreeAsText() const
 {
     WKBundleFrameRef mainFrame = WKBundlePageGetMainFrame(InjectedBundle::shared().page()->page());
@@ -256,16 +218,6 @@ JSValueRef LayoutTestController::computedStyleIncludingVisitedInfo(JSValueRef el
     if (!value)
         return JSValueMakeUndefined(context);
     return value;
-}
-
-JSRetainPtr<JSStringRef> LayoutTestController::counterValueForElementById(JSStringRef elementId)
-{
-    WKBundleFrameRef mainFrame = WKBundlePageGetMainFrame(InjectedBundle::shared().page()->page());
-    JSObjectRef element = getElementById(mainFrame, elementId);
-    if (!element)
-        return 0;
-    WKRetainPtr<WKStringRef> value(AdoptWK, WKBundleFrameCopyCounterValue(mainFrame, const_cast<JSObjectRef>(element)));
-    return toJS(value);
 }
 
 JSRetainPtr<JSStringRef> LayoutTestController::markerTextForListItem(JSValueRef element)
@@ -375,6 +327,11 @@ void LayoutTestController::setFrameFlatteningEnabled(bool enabled)
     WKBundleSetFrameFlatteningEnabled(InjectedBundle::shared().bundle(), InjectedBundle::shared().pageGroup(), enabled);
 }
 
+void LayoutTestController::setPluginsEnabled(bool enabled)
+{
+    WKBundleSetPluginsEnabled(InjectedBundle::shared().bundle(), InjectedBundle::shared().pageGroup(), enabled);
+}
+
 void LayoutTestController::setGeolocationPermission(bool enabled)
 {
     WKBundleSetGeolocationPermission(InjectedBundle::shared().bundle(), InjectedBundle::shared().pageGroup(), enabled);
@@ -458,6 +415,7 @@ void LayoutTestController::clearBackForwardList()
 void LayoutTestController::makeWindowObject(JSContextRef context, JSObjectRef windowObject, JSValueRef* exception)
 {
     setProperty(context, windowObject, "layoutTestController", this, kJSPropertyAttributeReadOnly | kJSPropertyAttributeDontDelete, exception);
+    setProperty(context, windowObject, "testRunner", this, kJSPropertyAttributeReadOnly | kJSPropertyAttributeDontDelete, exception);
 }
 
 void LayoutTestController::showWebInspector()
@@ -479,13 +437,6 @@ void LayoutTestController::evaluateInWebInspector(long callID, JSStringRef scrip
 #if ENABLE(INSPECTOR)
     WKRetainPtr<WKStringRef> scriptWK = toWK(script);
     WKBundleInspectorEvaluateScriptForTest(WKBundlePageGetInspector(InjectedBundle::shared().page()->page()), callID, scriptWK.get());
-#endif // ENABLE(INSPECTOR)
-}
-
-void LayoutTestController::setJavaScriptProfilingEnabled(bool enabled)
-{
-#if ENABLE(INSPECTOR)
-    WKBundleInspectorSetJavaScriptProfilingEnabled(WKBundlePageGetInspector(InjectedBundle::shared().page()->page()), enabled);
 #endif // ENABLE(INSPECTOR)
 }
 
@@ -547,22 +498,28 @@ void LayoutTestController::setShouldStayOnPageAfterHandlingBeforeUnload(bool sho
     InjectedBundle::shared().postNewBeforeUnloadReturnValue(!shouldStayOnPage);
 }
 
+void LayoutTestController::setDefersLoading(bool shouldDeferLoading)
+{
+    WKBundlePageSetDefersLoading(InjectedBundle::shared().page()->page(), shouldDeferLoading);
+}
+
 void LayoutTestController::setPageVisibility(JSStringRef state)
 {
-    WKStringRef visibilityStateKey = toWK(state).get();
     WebCore::PageVisibilityState visibilityState = WebCore::PageVisibilityStateVisible;
 
-    if (WKStringIsEqualToUTF8CString(visibilityStateKey, "hidden"))
+    if (JSStringIsEqualToUTF8CString(state, "hidden"))
         visibilityState = WebCore::PageVisibilityStateHidden;
-    else if (WKStringIsEqualToUTF8CString(visibilityStateKey, "prerender"))
+    else if (JSStringIsEqualToUTF8CString(state, "prerender"))
         visibilityState = WebCore::PageVisibilityStatePrerender;
+    else if (JSStringIsEqualToUTF8CString(state, "preview"))
+        visibilityState = WebCore::PageVisibilityStatePreview;
 
-    WKBundleSetPageVisibilityState(InjectedBundle::shared().bundle(), InjectedBundle::shared().pageGroup(), visibilityState, /* isInitialState */ false);
+    WKBundleSetPageVisibilityState(InjectedBundle::shared().bundle(), InjectedBundle::shared().page()->page(), visibilityState, /* isInitialState */ false);
 }
 
 void LayoutTestController::resetPageVisibility()
 {
-    WKBundleSetPageVisibilityState(InjectedBundle::shared().bundle(), InjectedBundle::shared().pageGroup(), WebCore::PageVisibilityStateVisible, /* isInitialState */ true);
+    WKBundleSetPageVisibilityState(InjectedBundle::shared().bundle(), InjectedBundle::shared().page()->page(), WebCore::PageVisibilityStateVisible, /* isInitialState */ true);
 }
 
 void LayoutTestController::dumpConfigurationForViewport(int deviceDPI, int deviceWidth, int deviceHeight, int availableWidth, int availableHeight)

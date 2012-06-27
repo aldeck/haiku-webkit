@@ -35,6 +35,7 @@
 #include "BeforeTextInsertedEvent.h"
 #include "Chrome.h"
 #include "ChromeClient.h"
+#include "ElementShadow.h"
 #include "FormDataList.h"
 #include "Frame.h"
 #include "HTMLInputElement.h"
@@ -45,7 +46,6 @@
 #include "RenderTextControlSingleLine.h"
 #include "RenderTheme.h"
 #include "ShadowRoot.h"
-#include "ShadowTree.h"
 #include "TextControlInnerElements.h"
 #include "TextEvent.h"
 #include "TextIterator.h"
@@ -63,6 +63,18 @@ TextFieldInputType::TextFieldInputType(HTMLInputElement* element)
 
 TextFieldInputType::~TextFieldInputType()
 {
+    if (m_innerSpinButton)
+        m_innerSpinButton->removeStepActionHandler();
+}
+
+bool TextFieldInputType::isKeyboardFocusable(KeyboardEvent*) const
+{
+    return element()->isTextFormControlFocusable();
+}
+
+bool TextFieldInputType::isMouseFocusable() const
+{
+    return element()->isTextFormControlFocusable();
 }
 
 bool TextFieldInputType::isTextField() const
@@ -142,14 +154,12 @@ void TextFieldInputType::handleKeydownEventForSpinButton(KeyboardEvent* event)
     if (element()->disabled() || element()->readOnly())
         return;
     const String& key = event->keyIdentifier();
-    int step = 0;
     if (key == "Up")
-        step = 1;
+        spinButtonStepUp();
     else if (key == "Down")
-        step = -1;
+        spinButtonStepDown();
     else
         return;
-    element()->stepUpFromRenderer(step);
     event->setDefaultHandled();
 }
 
@@ -157,14 +167,12 @@ void TextFieldInputType::handleWheelEventForSpinButton(WheelEvent* event)
 {
     if (element()->disabled() || element()->readOnly() || !element()->focused())
         return;
-    int step = 0;
     if (event->wheelDeltaY() > 0)
-        step = 1;
+        spinButtonStepUp();
     else if (event->wheelDeltaY() < 0)
-        step = -1;
+        spinButtonStepDown();
     else
         return;
-    element()->stepUpFromRenderer(step);
     event->setDefaultHandled();
 }
 
@@ -174,8 +182,10 @@ void TextFieldInputType::forwardEvent(Event* event)
         RenderTextControlSingleLine* renderTextControl = toRenderTextControlSingleLine(element()->renderer());
         if (event->type() == eventNames().blurEvent) {
             if (RenderBox* innerTextRenderer = innerTextElement()->renderBox()) {
-                if (RenderLayer* innerLayer = innerTextRenderer->layer())
-                    innerLayer->scrollToOffset(!renderTextControl->style()->isLeftToRightDirection() ? innerLayer->scrollWidth() : 0, 0, RenderLayer::ScrollOffsetClamped);
+                if (RenderLayer* innerLayer = innerTextRenderer->layer()) {
+                    IntSize scrollOffset(!renderTextControl->style()->isLeftToRightDirection() ? innerLayer->scrollWidth() : 0, 0);
+                    innerLayer->scrollToOffset(scrollOffset, RenderLayer::ScrollOffsetClamped);
+                }
             }
 
             renderTextControl->capsLockStateMayHaveChanged();
@@ -221,7 +231,7 @@ bool TextFieldInputType::shouldHaveSpinButton() const
 
 void TextFieldInputType::createShadowSubtree()
 {
-    ASSERT(element()->hasShadowRoot());
+    ASSERT(element()->shadow());
 
     ASSERT(!m_innerText);
     ASSERT(!m_innerBlock);
@@ -236,11 +246,11 @@ void TextFieldInputType::createShadowSubtree()
     ExceptionCode ec = 0;
     m_innerText = TextControlInnerTextElement::create(document);
     if (!createsContainer) {
-        element()->shadowTree()->oldestShadowRoot()->appendChild(m_innerText, ec);
+        element()->shadow()->oldestShadowRoot()->appendChild(m_innerText, ec);
         return;
     }
 
-    ShadowRoot* shadowRoot = element()->shadowTree()->oldestShadowRoot();
+    ShadowRoot* shadowRoot = element()->shadow()->oldestShadowRoot();
     m_container = HTMLDivElement::create(document);
     m_container->setShadowPseudoId("-webkit-textfield-decoration-container");
     shadowRoot->appendChild(m_container, ec);
@@ -258,7 +268,7 @@ void TextFieldInputType::createShadowSubtree()
 #endif
 
     if (shouldHaveSpinButton) {
-        m_innerSpinButton = SpinButtonElement::create(document);
+        m_innerSpinButton = SpinButtonElement::create(document, *this);
         m_container->appendChild(m_innerSpinButton, ec);
     }
 
@@ -308,6 +318,8 @@ void TextFieldInputType::destroyShadowSubtree()
 #if ENABLE(INPUT_SPEECH)
     m_speechButton.clear();
 #endif
+    if (m_innerSpinButton)
+        m_innerSpinButton->removeStepActionHandler();
     m_innerSpinButton.clear();
     m_container.clear();
 }
@@ -405,11 +417,18 @@ void TextFieldInputType::updatePlaceholderText()
     if (!m_placeholder) {
         m_placeholder = HTMLDivElement::create(element()->document());
         m_placeholder->setShadowPseudoId("-webkit-input-placeholder");
-        element()->shadowTree()->oldestShadowRoot()->insertBefore(m_placeholder, m_container ? m_container->nextSibling() : innerTextElement()->nextSibling(), ec);
+        element()->shadow()->oldestShadowRoot()->insertBefore(m_placeholder, m_container ? m_container->nextSibling() : innerTextElement()->nextSibling(), ec);
         ASSERT(!ec);
     }
     m_placeholder->setInnerText(placeholderText, ec);
     ASSERT(!ec);
+    element()->fixPlaceholderRenderer(m_placeholder.get(), m_container ? m_container.get() : m_innerText.get());
+}
+
+void TextFieldInputType::attach()
+{
+    InputType::attach();
+    element()->fixPlaceholderRenderer(m_placeholder.get(), m_container ? m_container.get() : m_innerText.get());
 }
 
 bool TextFieldInputType::appendFormData(FormDataList& list, bool multipart) const
@@ -420,5 +439,16 @@ bool TextFieldInputType::appendFormData(FormDataList& list, bool multipart) cons
         list.appendData(dirnameAttrValue, element()->directionForFormData());
     return true;
 }
+
+void TextFieldInputType::spinButtonStepDown()
+{
+    stepUpFromRenderer(-1);
+}
+
+void TextFieldInputType::spinButtonStepUp()
+{
+    stepUpFromRenderer(1);
+}
+
 
 } // namespace WebCore

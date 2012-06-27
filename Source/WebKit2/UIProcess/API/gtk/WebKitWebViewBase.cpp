@@ -36,6 +36,7 @@
 #include "WebContext.h"
 #include "WebEventFactory.h"
 #include "WebFullScreenClientGtk.h"
+#include "WebInspectorProxy.h"
 #include "WebKitPrivate.h"
 #include "WebKitWebViewBaseAccessible.h"
 #include "WebKitWebViewBasePrivate.h"
@@ -64,6 +65,10 @@
 #include "WebFullScreenManagerProxy.h"
 #endif
 
+#if USE(TEXTURE_MAPPER_GL) && defined(GDK_WINDOWING_X11)
+#include <gdk/gdkx.h>
+#endif
+
 using namespace WebKit;
 using namespace WebCore;
 
@@ -87,9 +92,15 @@ struct _WebKitWebViewBasePrivate {
     bool fullScreenModeActive;
     WebFullScreenClientGtk fullScreenClient;
 #endif
+    GtkWidget* inspectorView;
+    unsigned inspectorViewHeight;
+    WebContextMenuProxyGtk* activeContextMenuProxy;
 };
 
 G_DEFINE_TYPE(WebKitWebViewBase, webkit_web_view_base, GTK_TYPE_CONTAINER)
+
+// Keep this in sync with the value minimumAttachedHeight in WebInspectorProxy.
+static const unsigned gMinimumAttachedInspectorHeight = 250;
 
 static void webkitWebViewBaseNotifyResizerSizeForWindow(WebKitWebViewBase* webViewBase, GtkWindow* window)
 {
@@ -148,6 +159,9 @@ static void webkitWebViewBaseRealize(GtkWidget* widget)
     gint attributesMask = GDK_WA_X | GDK_WA_Y | GDK_WA_VISUAL;
 
     GdkWindow* window = gdk_window_new(gtk_widget_get_parent_window(widget), &attributes, attributesMask);
+#if USE(TEXTURE_MAPPER_GL)
+    gdk_window_ensure_native(window);
+#endif
     gtk_widget_set_window(widget, window);
     gdk_window_set_user_data(window, widget);
 
@@ -170,9 +184,16 @@ static void webkitWebViewBaseContainerAdd(GtkContainer* container, GtkWidget* wi
     WebKitWebViewBase* webView = WEBKIT_WEB_VIEW_BASE(container);
     WebKitWebViewBasePrivate* priv = webView->priv;
 
-    GtkAllocation childAllocation;
-    gtk_widget_get_allocation(widget, &childAllocation);
-    priv->children.set(widget, childAllocation);
+    if (WEBKIT_IS_WEB_VIEW_BASE(widget)
+        && WebInspectorProxy::isInspectorPage(WEBKIT_WEB_VIEW_BASE(widget)->priv->pageProxy.get())) {
+        ASSERT(priv->inspectorView);
+        priv->inspectorView = widget;
+        priv->inspectorViewHeight = gMinimumAttachedInspectorHeight;
+    } else {
+        GtkAllocation childAllocation;
+        gtk_widget_get_allocation(widget, &childAllocation);
+        priv->children.set(widget, childAllocation);
+    }
 
     gtk_widget_set_parent(widget, GTK_WIDGET(container));
 }
@@ -183,11 +204,16 @@ static void webkitWebViewBaseContainerRemove(GtkContainer* container, GtkWidget*
     WebKitWebViewBasePrivate* priv = webView->priv;
     GtkWidget* widgetContainer = GTK_WIDGET(container);
 
-    ASSERT(priv->children.contains(widget));
     gboolean wasVisible = gtk_widget_get_visible(widget);
     gtk_widget_unparent(widget);
 
-    priv->children.remove(widget);
+    if (priv->inspectorView == widget) {
+        priv->inspectorView = 0;
+        priv->inspectorViewHeight = 0;
+    } else {
+        ASSERT(priv->children.contains(widget));
+        priv->children.remove(widget);
+    }
     if (wasVisible && gtk_widget_get_visible(widgetContainer))
         gtk_widget_queue_resize(widgetContainer);
 }
@@ -201,6 +227,9 @@ static void webkitWebViewBaseContainerForall(GtkContainer* container, gboolean i
     WebKitWebViewChildrenMap::const_iterator end = children.end();
     for (WebKitWebViewChildrenMap::const_iterator current = children.begin(); current != end; ++current)
         (*callback)(current->first, callbackData);
+
+    if (includeInternals && priv->inspectorView)
+        (*callback)(priv->inspectorView, callbackData);
 }
 
 void webkitWebViewBaseChildMoveResize(WebKitWebViewBase* webView, GtkWidget* child, const IntRect& childRect)
@@ -282,9 +311,19 @@ static void resizeWebKitWebViewBaseFromAllocation(WebKitWebViewBase* webViewBase
 {
     gtk_container_foreach(GTK_CONTAINER(webViewBase), webkitWebViewBaseChildAllocate, webViewBase);
 
+    IntRect viewRect(allocation->x, allocation->y, allocation->width, allocation->height);
     WebKitWebViewBasePrivate* priv = webViewBase->priv;
+    if (priv->inspectorView) {
+        GtkAllocation childAllocation = viewRect;
+        childAllocation.y = allocation->height - priv->inspectorViewHeight;
+        childAllocation.height = priv->inspectorViewHeight;
+        gtk_widget_size_allocate(priv->inspectorView, &childAllocation);
+
+        viewRect.setHeight(allocation->height - priv->inspectorViewHeight);
+    }
+
     if (priv->pageProxy->drawingArea())
-        priv->pageProxy->drawingArea()->setSize(IntSize(allocation->width, allocation->height), IntSize());
+        priv->pageProxy->drawingArea()->setSize(viewRect.size(), IntSize());
 
     GtkWidget* toplevel = gtk_widget_get_toplevel(GTK_WIDGET(webViewBase));
     if (widgetIsOnscreenToplevelWindow(toplevel))
@@ -308,6 +347,13 @@ static void webkitWebViewBaseMap(GtkWidget* widget)
     GTK_WIDGET_CLASS(webkit_web_view_base_parent_class)->map(widget);
 
     WebKitWebViewBase* webViewBase = WEBKIT_WEB_VIEW_BASE(widget);
+#if USE(TEXTURE_MAPPER_GL) && defined(GDK_WINDOWING_X11)
+    GdkWindow* gdkWindow = gtk_widget_get_window(widget);
+    ASSERT(gdkWindow);
+    if (gdk_window_has_native(gdkWindow))
+        webViewBase->priv->pageProxy->widgetMapped(GDK_WINDOW_XID(gdkWindow));
+#endif
+
     if (!webViewBase->priv->needsResizeOnMap)
         return;
 
@@ -404,7 +450,7 @@ static gboolean webkitWebViewBaseButtonPressEvent(GtkWidget* widget, GdkEventBut
         return TRUE;
     priv->pageProxy->handleMouseEvent(NativeWebMouseEvent(reinterpret_cast<GdkEvent*>(buttonEvent),
                                                      priv->clickCounter.clickCountForGdkButtonEvent(widget, buttonEvent)));
-    return FALSE;
+    return TRUE;
 }
 
 static gboolean webkitWebViewBaseButtonReleaseEvent(GtkWidget* widget, GdkEventButton* event)
@@ -415,7 +461,7 @@ static gboolean webkitWebViewBaseButtonReleaseEvent(GtkWidget* widget, GdkEventB
     gtk_widget_grab_focus(widget);
     priv->pageProxy->handleMouseEvent(NativeWebMouseEvent(reinterpret_cast<GdkEvent*>(event), 0 /* currentClickCount */));
 
-    return FALSE;
+    return TRUE;
 }
 
 static gboolean webkitWebViewBaseScrollEvent(GtkWidget* widget, GdkEventScroll* event)
@@ -425,7 +471,7 @@ static gboolean webkitWebViewBaseScrollEvent(GtkWidget* widget, GdkEventScroll* 
 
     priv->pageProxy->handleWheelEvent(NativeWebWheelEvent(reinterpret_cast<GdkEvent*>(event)));
 
-    return FALSE;
+    return TRUE;
 }
 
 static gboolean webkitWebViewBaseMotionNotifyEvent(GtkWidget* widget, GdkEventMotion* event)
@@ -435,7 +481,7 @@ static gboolean webkitWebViewBaseMotionNotifyEvent(GtkWidget* widget, GdkEventMo
 
     priv->pageProxy->handleMouseEvent(NativeWebMouseEvent(reinterpret_cast<GdkEvent*>(event), 0 /* currentClickCount */));
 
-    return FALSE;
+    return TRUE;
 }
 
 static gboolean webkitWebViewBaseQueryTooltip(GtkWidget* widget, gint x, gint y, gboolean keyboardMode, GtkTooltip* tooltip)
@@ -644,8 +690,8 @@ void webkitWebViewBaseStartDrag(WebKitWebViewBase* webViewBase, const DragData& 
 {
     WebKitWebViewBasePrivate* priv = webViewBase->priv;
 
-    RefPtr<DataObjectGtk> dataObject(dragData.platformData());
-    GRefPtr<GtkTargetList> targetList(PasteboardHelper::defaultPasteboardHelper()->targetListForDataObject(dataObject.get()));
+    RefPtr<DataObjectGtk> dataObject = adoptRef(dragData.platformData());
+    GRefPtr<GtkTargetList> targetList = adoptGRef(PasteboardHelper::defaultPasteboardHelper()->targetListForDataObject(dataObject.get()));
     GOwnPtr<GdkEvent> currentEvent(gtk_get_current_event());
     GdkDragContext* context = gtk_drag_begin(GTK_WIDGET(webViewBase),
                                              targetList.get(),
@@ -717,4 +763,24 @@ void webkitWebViewBaseExitFullScreen(WebKitWebViewBase* webkitWebViewBase)
 void webkitWebViewBaseInitializeFullScreenClient(WebKitWebViewBase* webkitWebViewBase, const WKFullScreenClientGtk* wkClient)
 {
     webkitWebViewBase->priv->fullScreenClient.initialize(wkClient);
+}
+
+void webkitWebViewBaseSetInspectorViewHeight(WebKitWebViewBase* webkitWebViewBase, unsigned height)
+{
+    if (!webkitWebViewBase->priv->inspectorView)
+        return;
+    if (webkitWebViewBase->priv->inspectorViewHeight == height)
+        return;
+    webkitWebViewBase->priv->inspectorViewHeight = height;
+    gtk_widget_queue_resize_no_redraw(GTK_WIDGET(webkitWebViewBase));
+}
+
+void webkitWebViewBaseSetActiveContextMenuProxy(WebKitWebViewBase* webkitWebViewBase, WebContextMenuProxyGtk* contextMenuProxy)
+{
+    webkitWebViewBase->priv->activeContextMenuProxy = contextMenuProxy;
+}
+
+WebContextMenuProxyGtk* webkitWebViewBaseGetActiveContextMenuProxy(WebKitWebViewBase* webkitWebViewBase)
+{
+    return webkitWebViewBase->priv->activeContextMenuProxy;
 }

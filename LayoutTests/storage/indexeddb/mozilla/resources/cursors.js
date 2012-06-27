@@ -16,8 +16,7 @@ function test()
     removeVendorPrefixes();
 
     name = self.location.pathname;
-    description = "My Test Database";
-    request = evalAndLog("indexedDB.open(name, description)");
+    request = evalAndLog("indexedDB.open(name)");
     request.onsuccess = openSuccess;
     request.onerror = unexpectedErrorCallback;
 }
@@ -312,7 +311,7 @@ function testGroup13()
     gotRemoveEvent = false;
     retval = false;
 
-    request = evalAndLog("request = objectStore.openCursor(null, IDBCursor.NEXT);");
+    request = evalAndLog("request = objectStore.openCursor(null, 'next');");
     request.onerror = unexpectedErrorCallback;
     request.onsuccess = function (event) {
       cursor = evalAndLog("cursor = event.target.result;");
@@ -361,7 +360,7 @@ function testGroup15()
 {
     keyIndex = sortedKeys.length - 1;
 
-    request = evalAndLog("request = objectStore.openCursor(null, IDBCursor.PREV);");
+    request = evalAndLog("request = objectStore.openCursor(null, 'prev');");
     request.onerror = unexpectedErrorCallback;
     request.onsuccess = function (event) {
       cursor = evalAndLog("cursor = event.target.result;");

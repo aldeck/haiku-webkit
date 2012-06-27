@@ -35,6 +35,7 @@
 #include "EditingStyle.h"
 #include "EditorInsertAction.h"
 #include "FindOptions.h"
+#include "FrameDestructionObserver.h"
 #include "FrameSelection.h"
 #include "TextChecking.h"
 #include "VisibleSelection.h"
@@ -83,7 +84,7 @@ struct CompositionUnderline {
 enum EditorCommandSource { CommandFromMenuOrKeyBinding, CommandFromDOM, CommandFromDOMWithUserInterface };
 enum EditorParagraphSeparator { EditorParagraphSeparatorIsDiv, EditorParagraphSeparatorIsP };
 
-class Editor {
+class Editor : public FrameDestructionObserver {
 public:
     Editor(Frame*);
     ~Editor();
@@ -133,8 +134,7 @@ public:
     bool shouldShowDeleteInterface(HTMLElement*) const;
     bool shouldDeleteRange(Range*) const;
     bool shouldApplyStyle(StylePropertySet*, Range*);
-    
-    void respondToChangedSelection(const VisibleSelection& oldSelection);
+
     void respondToChangedContents(const VisibleSelection& endingSelection);
 
     bool selectionStartHasStyle(CSSPropertyID, const String& value) const;
@@ -232,10 +232,12 @@ public:
     void markMisspellingsAndBadGrammar(const VisibleSelection& spellingSelection, bool markGrammar, const VisibleSelection& grammarSelection);
     void markAndReplaceFor(PassRefPtr<SpellCheckRequest>, const Vector<TextCheckingResult>&);
 
-#if USE(AUTOMATIC_TEXT_REPLACEMENT)
+#if USE(APPKIT)
     void uppercaseWord();
     void lowercaseWord();
     void capitalizeWord();
+#endif
+#if USE(AUTOMATIC_TEXT_REPLACEMENT)
     void showSubstitutionsPanel();
     bool substitutionsPanelIsShowing();
     void toggleSmartInsertDelete();
@@ -293,6 +295,7 @@ public:
     void cancelComposition();
     PassRefPtr<Range> compositionRange() const;
     bool getCompositionSelection(unsigned& selectionStart, unsigned& selectionEnd) const;
+    bool setSelectionOffsets(int selectionStart, int selectionEnd);
 
     // getting international text input composition state (for use by InlineTextBox)
     Text* compositionNode() const { return m_compositionNode.get(); }
@@ -319,10 +322,6 @@ public:
 
     PassRefPtr<Range> selectedRange();
     
-    // We should make these functions private when their callers in Frame are moved over here to Editor
-    bool insideVisibleArea(const LayoutPoint&) const;
-    bool insideVisibleArea(Range*) const;
-
     void addToKillRing(Range*, bool prepend);
 
     void startAlternativeTextUITimer();
@@ -396,9 +395,11 @@ public:
 
     EditorParagraphSeparator defaultParagraphSeparator() const { return m_defaultParagraphSeparator; }
     void setDefaultParagraphSeparator(EditorParagraphSeparator separator) { m_defaultParagraphSeparator = separator; }
-
+    Vector<String> dictationAlternativesForMarker(const DocumentMarker*);
+    void applyDictationAlternativelternative(const String& alternativeString);
 private:
-    Frame* m_frame;
+    virtual void willDetachPage() OVERRIDE;
+
     OwnPtr<DeleteButtonController> m_deleteButtonController;
     RefPtr<CompositeEditCommand> m_lastEditCommand;
     RefPtr<Node> m_removedAnchor;
@@ -421,7 +422,7 @@ private:
     PassRefPtr<Clipboard> newGeneralClipboard(ClipboardAccessPolicy, Frame*);
     void pasteAsPlainTextWithPasteboard(Pasteboard*);
     void pasteWithPasteboard(Pasteboard*, bool allowPlainText);
-    void revealSelectionAfterEditingOperation();
+    void revealSelectionAfterEditingOperation(const ScrollAlignment& = ScrollAlignment::alignCenterIfNeeded);
     void markMisspellingsOrBadGrammar(const VisibleSelection&, bool checkSpelling, RefPtr<Range>& firstMisspellingRange);
     TextCheckingTypeMask resolveTextCheckingTypeMask(TextCheckingTypeMask);
 
@@ -429,11 +430,8 @@ private:
     enum SetCompositionMode { ConfirmComposition, CancelComposition };
     void setComposition(const String&, SetCompositionMode);
 
-    PassRefPtr<Range> firstVisibleRange(const String&, FindOptions);
-    PassRefPtr<Range> lastVisibleRange(const String&, FindOptions);
-    PassRefPtr<Range> nextVisibleRange(Range*, const String&, FindOptions);
-
-    void changeSelectionAfterCommand(const VisibleSelection& newSelection, bool closeTyping, bool clearTypingStyle);
+    void changeSelectionAfterCommand(const VisibleSelection& newSelection, FrameSelection::SetSelectionOptions);
+    void notifyComponentsOnChangedSelection(const VisibleSelection& oldSelection, FrameSelection::SetSelectionOptions);
 
     Node* findEventTargetFromSelection() const;
 

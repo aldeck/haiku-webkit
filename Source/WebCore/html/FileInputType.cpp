@@ -23,10 +23,13 @@
 #include "FileInputType.h"
 
 #include "Chrome.h"
+#include "DragData.h"
+#include "ElementShadow.h"
 #include "Event.h"
 #include "File.h"
 #include "FileList.h"
 #include "FileSystem.h"
+#include "FormController.h"
 #include "FormDataList.h"
 #include "Frame.h"
 #include "HTMLInputElement.h"
@@ -36,7 +39,6 @@
 #include "RenderFileUploadControl.h"
 #include "ScriptController.h"
 #include "ShadowRoot.h"
-#include "ShadowTree.h"
 #include <wtf/PassOwnPtr.h>
 #include <wtf/text/StringBuilder.h>
 #include <wtf/text/WTFString.h>
@@ -99,33 +101,29 @@ const AtomicString& FileInputType::formControlType() const
     return InputTypeNames::file();
 }
 
-bool FileInputType::saveFormControlState(String& result) const
+FormControlState FileInputType::saveFormControlState() const
 {
     if (m_fileList->isEmpty())
-        return false;
-    result = String();
+        return FormControlState();
+    FormControlState state;
     unsigned numFiles = m_fileList->length();
     for (unsigned i = 0; i < numFiles; ++i) {
-        result.append(m_fileList->item(i)->path());
-        result.append('\1');
-        result.append(m_fileList->item(i)->name());
-        result.append('\0');
+        state.append(m_fileList->item(i)->path());
+        state.append(m_fileList->item(i)->name());
     }
-    return true;
+    return state;
 }
 
-void FileInputType::restoreFormControlState(const String& state)
+void FileInputType::restoreFormControlState(const FormControlState& state)
 {
+    if (state.valueSize() % 2)
+        return;
     Vector<FileChooserFileInfo> files;
-    Vector<String> paths;
-    state.split('\0', paths);
-    for (unsigned i = 0; i < paths.size(); ++i) {
-        Vector<String> pathAndName;
-        paths[i].split('\1', pathAndName);
-        if (pathAndName.size() > 1)
-            files.append(FileChooserFileInfo(pathAndName[0], pathAndName[1]));
+    for (size_t i = 0; i < state.valueSize(); i += 2) {
+        if (!state[i + 1].isEmpty())
+            files.append(FileChooserFileInfo(state[i], state[i + 1]));
         else
-            files.append(FileChooserFileInfo(paths[i]));
+            files.append(FileChooserFileInfo(state[i]));
     }
     filesChosen(files);
 }
@@ -187,7 +185,11 @@ void FileInputType::handleDOMActivateEvent(Event* event)
         settings.allowsMultipleFiles = input->fastHasAttribute(multipleAttr);
 #endif
         settings.acceptMIMETypes = input->acceptMIMETypes();
+        settings.acceptFileExtensions = input->acceptFileExtensions();
         settings.selectedFiles = m_fileList->paths();
+#if ENABLE(MEDIA_CAPTURE)
+        settings.capture = input->capture();
+#endif
         chrome->runOpenPanel(input->document()->frame(), newFileChooser(settings));
     }
     event->setDefaultHandled();
@@ -251,9 +253,9 @@ void FileInputType::setValue(const String&, bool, TextFieldEventBehavior)
     element()->setNeedsStyleRecalc();
 }
 
-void FileInputType::setFileList(const Vector<FileChooserFileInfo>& files)
+PassRefPtr<FileList> FileInputType::createFileList(const Vector<FileChooserFileInfo>& files) const
 {
-    m_fileList->clear();
+    RefPtr<FileList> fileList(FileList::create());
     size_t size = files.size();
 
 #if ENABLE(DIRECTORY_UPLOAD)
@@ -275,14 +277,15 @@ void FileInputType::setFileList(const Vector<FileChooserFileInfo>& files)
         for (size_t i = 0; i < size; i++) {
             // Normalize backslashes to slashes before exposing the relative path to script.
             String relativePath = files[i].path.substring(rootLength).replace('\\', '/');
-            m_fileList->append(File::createWithRelativePath(files[i].path, relativePath));
+            fileList->append(File::createWithRelativePath(files[i].path, relativePath));
         }
-        return;
+        return fileList;
     }
 #endif
 
     for (size_t i = 0; i < size; i++)
-        m_fileList->append(File::createWithName(files[i].path, files[i].displayName));
+        fileList->append(File::createWithName(files[i].path, files[i].displayName));
+    return fileList;
 }
 
 bool FileInputType::isFileUpload() const
@@ -292,15 +295,15 @@ bool FileInputType::isFileUpload() const
 
 void FileInputType::createShadowSubtree()
 {
-    ASSERT(element()->hasShadowRoot());
+    ASSERT(element()->shadow());
     ExceptionCode ec = 0;
-    element()->shadowTree()->oldestShadowRoot()->appendChild(element()->multiple() ? UploadButtonElement::createForMultiple(element()->document()): UploadButtonElement::create(element()->document()), ec);
+    element()->shadow()->oldestShadowRoot()->appendChild(element()->multiple() ? UploadButtonElement::createForMultiple(element()->document()): UploadButtonElement::create(element()->document()), ec);
 }
 
 void FileInputType::multipleAttributeChanged()
 {
-    ASSERT(element()->hasShadowRoot());
-    UploadButtonElement* button = static_cast<UploadButtonElement*>(element()->shadowTree()->oldestShadowRoot()->firstChild());
+    ASSERT(element()->shadow());
+    UploadButtonElement* button = static_cast<UploadButtonElement*>(element()->shadow()->oldestShadowRoot()->firstChild());
     if (button)
         button->setValue(element()->multiple() ? fileButtonChooseMultipleFilesLabel() : fileButtonChooseFileLabel());
 }
@@ -314,31 +317,34 @@ void FileInputType::requestIcon(const Vector<String>& paths)
         chrome->loadIconForFiles(paths, newFileIconLoader());
 }
 
-void FileInputType::filesChosen(const Vector<FileChooserFileInfo>& files)
+void FileInputType::setFiles(PassRefPtr<FileList> files)
 {
+    if (!files)
+        return;
+
     RefPtr<HTMLInputElement> input = element();
 
     bool pathsChanged = false;
-    if (files.size() != m_fileList->length())
+    if (files->length() != m_fileList->length())
         pathsChanged = true;
     else {
-        for (unsigned i = 0; i < files.size(); ++i) {
-            if (files[i].path != m_fileList->item(i)->path()) {
+        for (unsigned i = 0; i < files->length(); ++i) {
+            if (files->item(i)->path() != m_fileList->item(i)->path()) {
                 pathsChanged = true;
                 break;
             }
         }
     }
 
-    setFileList(files);
+    m_fileList = files;
 
     input->setFormControlValueMatchesRenderer(true);
     input->notifyFormStateChanged();
     input->setNeedsValidityCheck();
 
     Vector<String> paths;
-    for (unsigned i = 0; i < files.size(); ++i)
-        paths.append(files[i].path);
+    for (unsigned i = 0; i < m_fileList->length(); ++i)
+        paths.append(m_fileList->item(i)->path());
     requestIcon(paths);
 
     if (input->renderer())
@@ -352,6 +358,11 @@ void FileInputType::filesChosen(const Vector<FileChooserFileInfo>& files)
     input->setChangedSinceLastFormControlChangeEvent(false);
 }
 
+void FileInputType::filesChosen(const Vector<FileChooserFileInfo>& files)
+{
+    setFiles(createFileList(files));
+}
+
 #if ENABLE(DIRECTORY_UPLOAD)
 void FileInputType::receiveDropForDirectoryUpload(const Vector<String>& paths)
 {
@@ -362,6 +373,7 @@ void FileInputType::receiveDropForDirectoryUpload(const Vector<String>& paths)
         settings.allowsMultipleFiles = true;
         settings.selectedFiles.append(paths[0]);
         settings.acceptMIMETypes = input->acceptMIMETypes();
+        settings.acceptFileExtensions = input->acceptFileExtensions();
         chrome->enumerateChosenDirectory(newFileChooser(settings));
     }
 }
@@ -377,14 +389,23 @@ void FileInputType::updateRendering(PassRefPtr<Icon> icon)
         element()->renderer()->repaint();
 }
 
-void FileInputType::receiveDroppedFiles(const Vector<String>& paths)
+bool FileInputType::receiveDroppedFiles(const DragData* dragData)
 {
+    Vector<String> paths;
+    dragData->asFilenames(paths);
+    if (paths.isEmpty())
+        return false;
+
     HTMLInputElement* input = element();
 #if ENABLE(DIRECTORY_UPLOAD)
     if (input->fastHasAttribute(webkitdirectoryAttr)) {
         receiveDropForDirectoryUpload(paths);
-        return;
+        return true;
     }
+#endif
+
+#if ENABLE(FILE_SYSTEM)
+    m_droppedFileSystemId = dragData->droppedFileSystemId();
 #endif
 
     Vector<FileChooserFileInfo> files;
@@ -398,7 +419,15 @@ void FileInputType::receiveDroppedFiles(const Vector<String>& paths)
         firstFileOnly.append(files[0]);
         filesChosen(firstFileOnly);
     }
+    return true;
 }
+
+#if ENABLE(FILE_SYSTEM)
+String FileInputType::droppedFileSystemId()
+{
+    return m_droppedFileSystemId;
+}
+#endif
 
 Icon* FileInputType::icon() const
 {

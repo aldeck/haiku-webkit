@@ -27,8 +27,6 @@ var builders = builders || {};
 
 (function() {
 
-var kChromiumBuildBotURL = 'http://build.chromium.org/p/chromium.webkit';
-
 var kUpdateStepName = 'update';
 var kUpdateScriptsStepName = 'update_scripts';
 var kCompileStepName = 'compile';
@@ -36,22 +34,19 @@ var kWebKitTestsStepName = 'webkit_tests';
 
 var kCrashedOrHungOutputMarker = 'crashed or hung';
 
-function urlForBuildInfo(builderName, buildNumber)
+function buildBotURL(platform)
 {
-    return kChromiumBuildBotURL + '/json/builders/' + encodeURIComponent(builderName) + '/builds/' + encodeURIComponent(buildNumber);
+    return config.kPlatforms[platform].buildConsoleURL;
 }
 
-function isStepRequredForTestCoverage(step)
+function urlForBuilderInfo(platform, builderName)
 {
-    switch(step.name) {
-    case kUpdateStepName:
-    case kUpdateScriptsStepName:
-    case kCompileStepName:
-    case kWebKitTestsStepName:
-        return true;
-    default:
-        return false;
-    }
+    return buildBotURL(platform) + '/json/builders/' + encodeURIComponent(builderName) + '/';
+}
+
+function urlForBuildInfo(platform, builderName, buildNumber)
+{
+    return buildBotURL(platform) + '/json/builders/' + encodeURIComponent(builderName) + '/builds/' + encodeURIComponent(buildNumber);
 }
 
 function didFail(step)
@@ -60,13 +55,12 @@ function didFail(step)
         // run-webkit-tests fails to generate test coverage when it crashes or hangs.
         return step.text.indexOf(kCrashedOrHungOutputMarker) != -1;
     }
-    // FIXME: Is this the correct way to test for failure?
-    return step.results[0] > 0;
+    return step.results[0] > 0 && step.text.indexOf('warning') == -1;
 }
 
-function didFailStepRequredForTestCoverage(buildInfo)
+function failingSteps(buildInfo)
 {
-    return buildInfo.steps.filter(isStepRequredForTestCoverage).filter(didFail).length > 0;
+    return buildInfo.steps.filter(didFail);
 }
 
 function mostRecentCompletedBuildNumber(individualBuilderStatus)
@@ -85,16 +79,29 @@ function mostRecentCompletedBuildNumber(individualBuilderStatus)
 
 var g_buildInfoCache = new base.AsynchronousCache(function(key, callback) {
     var explodedKey = key.split('\n');
-    net.get(urlForBuildInfo(explodedKey[0], explodedKey[1]), callback);
+    net.get(urlForBuildInfo(explodedKey[0], explodedKey[1], explodedKey[2]), callback);
 });
 
-function fetchMostRecentBuildInfoByBuilder(callback)
+builders.clearBuildInfoCache = function()
 {
-    var buildInfoByBuilder = {};
-    var builderNames = Object.keys(config.kBuilders);
-    var requestTracker = new base.RequestTracker(builderNames.length, callback, [buildInfoByBuilder]);
-    net.get(kChromiumBuildBotURL + '/json/builders', function(builderStatus) {
-        $.each(builderNames, function(index, builderName) {
+    g_buildInfoCache.clear();
+}
+
+function fetchMostRecentBuildInfoByBuilder(platform, callback)
+{
+    net.get(buildBotURL(platform) + '/json/builders', function(builderStatus) {
+        var buildInfoByBuilder = {};
+        var builderNames = Object.keys(builderStatus);
+        var requestTracker = new base.RequestTracker(builderNames.length, callback, [buildInfoByBuilder]);
+        builderNames.forEach(function(builderName) {
+            // FIXME: Should garden-o-matic show these? I can imagine showing the deps bots being useful at least so
+            // that the gardener only need to look at garden-o-matic and never at the waterfall. Not really sure who
+            // watches the GPU bots.
+            if (builderName.indexOf('GPU') != -1 || builderName.indexOf('deps') != -1 || builderName.indexOf('ASAN') != -1) {
+                requestTracker.requestComplete();
+                return;
+            }
+
             var buildNumber = mostRecentCompletedBuildNumber(builderStatus[builderName]);
             if (!buildNumber) {
                 buildInfoByBuilder[builderName] = null;
@@ -102,7 +109,7 @@ function fetchMostRecentBuildInfoByBuilder(callback)
                 return;
             }
 
-            g_buildInfoCache.get(builderName + '\n' + buildNumber, function(buildInfo) {
+            g_buildInfoCache.get(platform + '\n' + builderName + '\n' + buildNumber, function(buildInfo) {
                 buildInfoByBuilder[builderName] = buildInfo;
                 requestTracker.requestComplete();
             });
@@ -110,18 +117,74 @@ function fetchMostRecentBuildInfoByBuilder(callback)
     });
 }
 
-builders.buildersFailingStepRequredForTestCoverage = function(callback)
+builders.builderInfo = function(platform, builderName, callback)
 {
-    fetchMostRecentBuildInfoByBuilder(function(buildInfoByBuilder) {
-        var builderNameList = [];
+    var builderInfoURL = urlForBuilderInfo(platform, builderName);
+    net.get(builderInfoURL, callback);
+};
+
+builders.cachedBuildInfos = function(platform, builderName, callback)
+{
+    var builderInfoURL = urlForBuilderInfo(platform, builderName);
+    net.get(builderInfoURL, function(builderInfo) {
+        var selectURL = urlForBuilderInfo(platform, builderName) + 'builds';
+        // // FIXME: limit to some reasonable number?
+        var selectParams = { select : builderInfo.cachedBuilds };
+        var traditionalEncoding = true;
+        selectURL += '?' + $.param(selectParams, traditionalEncoding);
+        net.get(selectURL, callback);
+    });
+}
+
+builders.recentBuildInfos = function(callback)
+{
+    fetchMostRecentBuildInfoByBuilder(config.currentPlatform, function(buildInfoByBuilder) {
+        var buildInfo = {};
+        $.each(buildInfoByBuilder, function(builderName, thisBuildInfo) {
+            if (!buildInfo)
+                return;
+            
+            buildInfo[builderName] = thisBuildInfo;
+        });
+        callback(buildInfo);
+    });
+};
+
+builders.buildersFailingNonLayoutTests = function(callback)
+{
+    fetchMostRecentBuildInfoByBuilder(config.currentPlatform, function(buildInfoByBuilder) {
+        var failureList = {};
         $.each(buildInfoByBuilder, function(builderName, buildInfo) {
             if (!buildInfo)
                 return;
-            if (didFailStepRequredForTestCoverage(buildInfo))
-                builderNameList.push(builderName);
+            var failures = failingSteps(buildInfo);
+            if (failures.length)
+                failureList[builderName] = failures.map(function(failure) { return failure.name; });
         });
-        callback(builderNameList);
+        callback(failureList);
     });
 };
+
+builders.perfBuilders = function(callback)
+{
+    fetchMostRecentBuildInfoByBuilder(config.currentPlatform, function(buildInfoByBuilder) {
+        var perfTestMap = {};
+        $.each(buildInfoByBuilder, function(builderName, buildInfo) {
+            if (!buildInfo || builderName.indexOf('Perf') == -1)
+                return;
+
+            buildInfo.steps.forEach(function(step) {
+                // FIXME: If the compile is broken, grab an older build.
+                // If the compile/update is broken, no steps will have a results url.
+                if (!step.urls.results)
+                    return;
+                if (!perfTestMap[step.name])
+                    perfTestMap[step.name] = [];
+                perfTestMap[step.name].push({ builder: builderName, url: step.urls.results });
+            });
+        });
+        callback(perfTestMap);
+    });
+}
 
 })();

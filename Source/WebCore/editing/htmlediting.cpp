@@ -45,10 +45,11 @@
 #include "PositionIterator.h"
 #include "RenderObject.h"
 #include "Range.h"
-#include "VisibleSelection.h"
+#include "ShadowRoot.h"
 #include "Text.h"
 #include "TextIterator.h"
 #include "VisiblePosition.h"
+#include "VisibleSelection.h"
 #include "visible_units.h"
 #include <wtf/Assertions.h>
 #include <wtf/StdLibExtras.h>
@@ -71,32 +72,28 @@ bool isAtomicNode(const Node *node)
 // could be inside a shadow tree. Only works for non-null values.
 int comparePositions(const Position& a, const Position& b)
 {
-    Node* nodeA = a.deprecatedNode();
-    ASSERT(nodeA);
-    Node* nodeB = b.deprecatedNode();
-    ASSERT(nodeB);
-    int offsetA = a.deprecatedEditingOffset();
-    int offsetB = b.deprecatedEditingOffset();
+    TreeScope* commonScope = commonTreeScope(a.containerNode(), b.containerNode());
 
-    Node* shadowAncestorA = nodeA->shadowAncestorNode();
-    if (shadowAncestorA == nodeA)
-        shadowAncestorA = 0;
-    Node* shadowAncestorB = nodeB->shadowAncestorNode();
-    if (shadowAncestorB == nodeB)
-        shadowAncestorB = 0;
+    ASSERT(commonScope);
+    if (!commonScope)
+        return 0;
+
+    Node* nodeA = commonScope->ancestorInThisScope(a.deprecatedNode());
+    ASSERT(nodeA);
+    bool hasDescendentA = nodeA != a.deprecatedNode();
+    int offsetA = hasDescendentA ? 0 : a.deprecatedEditingOffset();
+
+    Node* nodeB = commonScope->ancestorInThisScope(b.deprecatedNode());
+    ASSERT(nodeB);
+    bool hasDescendentB = nodeB != b.deprecatedNode();
+    int offsetB = hasDescendentB ? 0 : b.deprecatedEditingOffset();
 
     int bias = 0;
-    if (shadowAncestorA != shadowAncestorB) {
-        if (shadowAncestorA) {
-            nodeA = shadowAncestorA;
-            offsetA = 0;
-            bias = 1;
-        }
-        if (shadowAncestorB) {
-            nodeB = shadowAncestorB;
-            offsetB = 0;
+    if (nodeA == nodeB) {
+        if (hasDescendentA)
             bias = -1;
-        }
+        else if (hasDescendentB)
+            bias = 1;
     }
 
     ExceptionCode ec;
@@ -148,12 +145,16 @@ Node* lowestEditableAncestor(Node* node)
     return lowestRoot;
 }
 
-bool isEditablePosition(const Position& p, EditableType editableType)
+bool isEditablePosition(const Position& p, EditableType editableType, EUpdateStyle updateStyle)
 {
     Node* node = p.deprecatedNode();
     if (!node)
         return false;
-        
+    if (updateStyle == UpdateStyle)
+        node->document()->updateLayoutIgnorePendingStylesheets();
+    else
+        ASSERT(updateStyle == DoNotUpdateStyle);
+
     if (node->renderer() && node->renderer()->isTable())
         node = node->parentNode();
     
@@ -258,11 +259,15 @@ VisiblePosition firstEditablePositionAfterPositionInRoot(const Position& positio
         return firstPositionInNode(highestRoot);
 
     Position p = position;
-    
-    if (Node* shadowAncestor = p.deprecatedNode()->shadowAncestorNode())
-        if (shadowAncestor != p.deprecatedNode())
-            p = positionAfterNode(shadowAncestor);
-    
+
+    if (position.deprecatedNode()->treeScope() != highestRoot->treeScope()) {
+        Node* shadowAncestor = highestRoot->treeScope()->ancestorInThisScope(p.deprecatedNode());
+        if (!shadowAncestor)
+            return VisiblePosition();
+
+        p = positionAfterNode(shadowAncestor);
+    }
+
     while (p.deprecatedNode() && !isEditablePosition(p) && p.deprecatedNode()->isDescendantOf(highestRoot))
         p = isAtomicNode(p.deprecatedNode()) ? positionInParentAfterNode(p.deprecatedNode()) : nextVisuallyDistinctCandidate(p);
     
@@ -280,9 +285,12 @@ VisiblePosition lastEditablePositionBeforePositionInRoot(const Position& positio
 
     Position p = position;
 
-    if (Node* shadowAncestor = p.deprecatedNode()->shadowAncestorNode()) {
-        if (shadowAncestor != p.deprecatedNode())
-            p = firstPositionInOrBeforeNode(shadowAncestor);
+    if (position.deprecatedNode()->treeScope() != highestRoot->treeScope()) {
+        Node* shadowAncestor = highestRoot->treeScope()->ancestorInThisScope(p.deprecatedNode());
+        if (!shadowAncestor)
+            return VisiblePosition();
+
+        p = firstPositionInOrBeforeNode(shadowAncestor);
     }
     
     while (p.deprecatedNode() && !isEditablePosition(p) && p.deprecatedNode()->isDescendantOf(highestRoot))
@@ -298,7 +306,7 @@ VisiblePosition lastEditablePositionBeforePositionInRoot(const Position& positio
 // Whether or not content before and after this node will collapse onto the same line as it.
 bool isBlock(const Node* node)
 {
-    return node && node->renderer() && !node->renderer()->isInline();
+    return node && node->renderer() && !node->renderer()->isInline() && !node->renderer()->isRubyText();
 }
 
 bool isInline(const Node* node)
@@ -310,9 +318,10 @@ bool isInline(const Node* node)
 // FIXME: Pass a position to this function.  The enclosing block of [table, x] for example, should be the 
 // block that contains the table and not the table, and this function should be the only one responsible for 
 // knowing about these kinds of special cases.
-Node* enclosingBlock(Node* node, EditingBoundaryCrossingRule rule)
+Element* enclosingBlock(Node* node, EditingBoundaryCrossingRule rule)
 {
-    return static_cast<Element*>(enclosingNodeOfType(firstPositionInOrBeforeNode(node), isBlock, rule));
+    Node* enclosingNode = enclosingNodeOfType(firstPositionInOrBeforeNode(node), isBlock, rule);
+    return enclosingNode && enclosingNode->isElementNode() ? toElement(enclosingNode) : 0;
 }
 
 TextDirection directionOfEnclosingBlock(const Position& position)
@@ -373,8 +382,8 @@ String stringWithRebalancedWhitespace(const String& string, bool startIsStartOfP
 
 bool isTableStructureNode(const Node *node)
 {
-    RenderObject *r = node->renderer();
-    return (r && (r->isTableCell() || r->isTableRow() || r->isTableSection() || r->isTableCol()));
+    RenderObject* renderer = node->renderer();
+    return (renderer && (renderer->isTableCell() || renderer->isTableRow() || renderer->isTableSection() || renderer->isRenderTableCol()));
 }
 
 const String& nonBreakingSpaceString()
@@ -1083,20 +1092,19 @@ VisibleSelection selectionForParagraphIteration(const VisibleSelection& original
 // opertion is unreliable. TextIterator's TextIteratorEmitsCharactersBetweenAllVisiblePositions mode needs to be fixed, 
 // or these functions need to be changed to iterate using actual VisiblePositions.
 // FIXME: Deploy these functions everywhere that TextIterators are used to convert between VisiblePositions and indices.
-int indexForVisiblePosition(const VisiblePosition& visiblePosition, RefPtr<Element>& scope)
+ 
+int indexForVisiblePosition(const VisiblePosition& visiblePosition, RefPtr<ContainerNode>& scope)
 {
     if (visiblePosition.isNull())
         return 0;
 
     Position p(visiblePosition.deepEquivalent());
     Document* document = p.anchorNode()->document();
-    Node* shadowRoot = p.anchorNode()->shadowTreeRootNode();
+    ShadowRoot* shadowRoot = p.anchorNode()->shadowRoot();
 
-    if (shadowRoot) {
-        // Use the shadow root for form elements, since TextIterators will not enter shadow content.
-        ASSERT(shadowRoot->isElementNode());
-        scope = static_cast<Element*>(shadowRoot);
-    } else
+    if (shadowRoot)
+        scope = shadowRoot;
+    else
         scope = document->documentElement();
 
     RefPtr<Range> range = Range::create(document, firstPositionInNode(scope.get()), p.parentAnchoredEquivalent());
@@ -1104,7 +1112,7 @@ int indexForVisiblePosition(const VisiblePosition& visiblePosition, RefPtr<Eleme
     return TextIterator::rangeLength(range.get(), true);
 }
 
-VisiblePosition visiblePositionForIndex(int index, Element *scope)
+VisiblePosition visiblePositionForIndex(int index, ContainerNode* scope)
 {
     RefPtr<Range> range = TextIterator::rangeFromLocationAndLength(scope, index, 0, true);
     // Check for an invalid index. Certain editing operations invalidate indices because 

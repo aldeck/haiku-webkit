@@ -27,16 +27,15 @@
 #define CCLayerImpl_h
 
 #include "Color.h"
-#include "FilterOperations.h"
 #include "FloatRect.h"
 #include "IntRect.h"
 #include "Region.h"
 #include "TextStream.h"
-#include "TransformationMatrix.h"
 #include "cc/CCInputHandler.h"
 #include "cc/CCLayerAnimationController.h"
 #include "cc/CCRenderSurface.h"
-#include "cc/CCSharedQuadState.h"
+#include <public/WebFilterOperations.h>
+#include <public/WebTransformationMatrix.h>
 #include <wtf/OwnPtr.h>
 #include <wtf/PassRefPtr.h>
 #include <wtf/RefCounted.h>
@@ -44,10 +43,13 @@
 
 namespace WebCore {
 
+class CCGraphicsContext;
 class CCLayerSorter;
+class CCLayerTreeHostImpl;
 class CCQuadCuller;
+class CCRenderer;
+class CCSharedQuadState;
 class LayerChromium;
-class LayerRendererChromium;
 
 class CCLayerImpl : public CCLayerAnimationControllerClient {
 public:
@@ -62,9 +64,8 @@ public:
     virtual int id() const OVERRIDE { return m_layerId; }
     virtual void setOpacityFromAnimation(float) OVERRIDE;
     virtual float opacity() const OVERRIDE { return m_opacity; }
-    virtual void setTransformFromAnimation(const TransformationMatrix&) OVERRIDE;
-    virtual const TransformationMatrix& transform() const OVERRIDE { return m_transform; }
-    virtual const IntSize& bounds() const OVERRIDE { return m_bounds; }
+    virtual void setTransformFromAnimation(const WebKit::WebTransformationMatrix&) OVERRIDE;
+    virtual const WebKit::WebTransformationMatrix& transform() const OVERRIDE { return m_transform; }
 
     // Tree structure.
     CCLayerImpl* parent() const { return m_parent; }
@@ -79,21 +80,27 @@ public:
     void setReplicaLayer(PassOwnPtr<CCLayerImpl>);
     CCLayerImpl* replicaLayer() const { return m_replicaLayer.get(); }
 
+    CCLayerTreeHostImpl* layerTreeHostImpl() const { return m_layerTreeHostImpl; }
+    void setLayerTreeHostImpl(CCLayerTreeHostImpl* hostImpl) { m_layerTreeHostImpl = hostImpl; }
+
     PassOwnPtr<CCSharedQuadState> createSharedQuadState() const;
     // willDraw must be called before appendQuads. If willDraw is called,
     // didDraw is guaranteed to be called before another willDraw or before
     // the layer is destroyed. To enforce this, any class that overrides
     // willDraw/didDraw must call the base class version.
-    virtual void willDraw(LayerRendererChromium*);
+    virtual void willDraw(CCRenderer*, CCGraphicsContext*);
     virtual void appendQuads(CCQuadCuller&, const CCSharedQuadState*, bool& hadMissingTiles) { }
     virtual void didDraw();
     void appendDebugBorderQuad(CCQuadCuller&, const CCSharedQuadState*) const;
 
-    virtual void bindContentsTexture(LayerRendererChromium*);
+    virtual unsigned contentsTextureId() const;
 
     // Returns true if this layer has content to draw.
     void setDrawsContent(bool);
     bool drawsContent() const { return m_drawsContent; }
+
+    bool forceRenderSurface() const { return m_forceRenderSurface; }
+    void setForceRenderSurface(bool force) { m_forceRenderSurface = force; }
 
     // Returns true if any of the layer's descendants has content to draw.
     bool descendantDrawsContent();
@@ -107,11 +114,11 @@ public:
     void setBackgroundColor(const Color&);
     Color backgroundColor() const { return m_backgroundColor; }
 
-    void setFilters(const FilterOperations&);
-    const FilterOperations& filters() const { return m_filters; }
+    void setFilters(const WebKit::WebFilterOperations&);
+    const WebKit::WebFilterOperations& filters() const { return m_filters; }
 
-    void setBackgroundFilters(const FilterOperations&);
-    const FilterOperations& backgroundFilters() const { return m_backgroundFilters; }
+    void setBackgroundFilters(const WebKit::WebFilterOperations&);
+    const WebKit::WebFilterOperations& backgroundFilters() const { return m_backgroundFilters; }
 
     void setMasksToBounds(bool);
     bool masksToBounds() const { return m_masksToBounds; }
@@ -125,8 +132,17 @@ public:
     void setPosition(const FloatPoint&);
     const FloatPoint& position() const { return m_position; }
 
+    void setIsContainerForFixedPositionLayers(bool isContainerForFixedPositionLayers) { m_isContainerForFixedPositionLayers = isContainerForFixedPositionLayers; }
+    bool isContainerForFixedPositionLayers() const { return m_isContainerForFixedPositionLayers; }
+
+    void setFixedToContainerLayer(bool fixedToContainerLayer = true) { m_fixedToContainerLayer = fixedToContainerLayer;}
+    bool fixedToContainerLayer() const { return m_fixedToContainerLayer; }
+
     void setPreserves3D(bool);
     bool preserves3D() const { return m_preserves3D; }
+
+    void setUseParentBackfaceVisibility(bool useParentBackfaceVisibility) { m_useParentBackfaceVisibility = useParentBackfaceVisibility; }
+    bool useParentBackfaceVisibility() const { return m_useParentBackfaceVisibility; }
 
     void setUsesLayerClipping(bool usesLayerClipping) { m_usesLayerClipping = usesLayerClipping; }
     bool usesLayerClipping() const { return m_usesLayerClipping; }
@@ -134,8 +150,8 @@ public:
     void setIsNonCompositedContent(bool isNonCompositedContent) { m_isNonCompositedContent = isNonCompositedContent; }
     bool isNonCompositedContent() const { return m_isNonCompositedContent; }
 
-    void setSublayerTransform(const TransformationMatrix&);
-    const TransformationMatrix& sublayerTransform() const { return m_sublayerTransform; }
+    void setSublayerTransform(const WebKit::WebTransformationMatrix&);
+    const WebKit::WebTransformationMatrix& sublayerTransform() const { return m_sublayerTransform; }
 
     // Debug layer border - visual effect only, do not change geometry/clipping/etc.
     void setDebugBorderColor(Color);
@@ -161,13 +177,21 @@ public:
     // Usage: if this->usesLayerClipping() is false, then this clipRect should not be used.
     const IntRect& clipRect() const { return m_clipRect; }
     void setClipRect(const IntRect& rect) { m_clipRect = rect; }
+
+    const IntRect& scissorRect() const { return m_scissorRect; }
+    void setScissorRect(const IntRect& rect) { m_scissorRect = rect; }
+
     CCRenderSurface* targetRenderSurface() const { return m_targetRenderSurface; }
     void setTargetRenderSurface(CCRenderSurface* surface) { m_targetRenderSurface = surface; }
 
     void setBounds(const IntSize&);
+    const IntSize& bounds() const { return m_bounds; }
 
     const IntSize& contentBounds() const { return m_contentBounds; }
     void setContentBounds(const IntSize&);
+
+    void setContentsScale(float contentsScale) { m_contentsScale = contentsScale; }
+    float contentsScale() const { return m_contentsScale; }
 
     const IntPoint& scrollPosition() const { return m_scrollPosition; }
     void setScrollPosition(const IntPoint&);
@@ -212,13 +236,13 @@ public:
     // Returns the rect containtaining this layer in the current view's coordinate system.
     const IntRect getDrawRect() const;
 
-    void setTransform(const TransformationMatrix&);
+    void setTransform(const WebKit::WebTransformationMatrix&);
     bool transformIsAnimating() const;
 
-    const TransformationMatrix& drawTransform() const { return m_drawTransform; }
-    void setDrawTransform(const TransformationMatrix& matrix) { m_drawTransform = matrix; }
-    const TransformationMatrix& screenSpaceTransform() const { return m_screenSpaceTransform; }
-    void setScreenSpaceTransform(const TransformationMatrix& matrix) { m_screenSpaceTransform = matrix; }
+    const WebKit::WebTransformationMatrix& drawTransform() const { return m_drawTransform; }
+    void setDrawTransform(const WebKit::WebTransformationMatrix& matrix) { m_drawTransform = matrix; }
+    const WebKit::WebTransformationMatrix& screenSpaceTransform() const { return m_screenSpaceTransform; }
+    void setScreenSpaceTransform(const WebKit::WebTransformationMatrix& matrix) { m_screenSpaceTransform = matrix; }
 
     bool drawTransformIsAnimating() const { return m_drawTransformIsAnimating; }
     void setDrawTransformIsAnimating(bool animating) { m_drawTransformIsAnimating = animating; }
@@ -232,7 +256,11 @@ public:
 
     String layerTreeAsText() const;
 
+    void setStackingOrderChanged(bool);
+
     bool layerPropertyChanged() const { return m_layerPropertyChanged; }
+    bool layerSurfacePropertyChanged() const;
+
     void resetAllChangeTrackingForSubtree();
 
     CCLayerAnimationController* layerAnimationController() { return m_layerAnimationController.get(); }
@@ -251,7 +279,7 @@ protected:
     static void writeIndent(TextStream&, int indent);
 
     // Transformation used to transform quads provided in appendQuads.
-    virtual TransformationMatrix quadTransform() const;
+    virtual WebKit::WebTransformationMatrix quadTransform() const;
 
 private:
     void setParent(CCLayerImpl* parent) { m_parent = parent; }
@@ -276,12 +304,14 @@ private:
     int m_replicaLayerId; // ditto
     OwnPtr<CCLayerImpl> m_replicaLayer;
     int m_layerId;
+    CCLayerTreeHostImpl* m_layerTreeHostImpl;
 
     // Properties synchronized from the associated LayerChromium.
     FloatPoint m_anchorPoint;
     float m_anchorPointZ;
     IntSize m_bounds;
     IntSize m_contentBounds;
+    float m_contentsScale;
     IntPoint m_scrollPosition;
     bool m_scrollable;
     bool m_shouldScrollOnMainThread;
@@ -295,19 +325,33 @@ private:
     // Tracks if drawing-related properties have changed since last redraw.
     bool m_layerPropertyChanged;
 
+    // Indicates that a property has changed on this layer that would not
+    // affect the pixels on its target surface, but would require redrawing
+    // but would require redrawing the targetSurface onto its ancestor targetSurface.
+    // For layers that do not own a surface this flag acts as m_layerPropertyChanged.
+    bool m_layerSurfacePropertyChanged;
+
+    // Uses layer's content space.
     IntRect m_visibleLayerRect;
     bool m_masksToBounds;
     bool m_opaque;
     float m_opacity;
     FloatPoint m_position;
     bool m_preserves3D;
+    bool m_useParentBackfaceVisibility;
     bool m_drawCheckerboardForMissingTiles;
-    TransformationMatrix m_sublayerTransform;
-    TransformationMatrix m_transform;
+    WebKit::WebTransformationMatrix m_sublayerTransform;
+    WebKit::WebTransformationMatrix m_transform;
     bool m_usesLayerClipping;
     bool m_isNonCompositedContent;
 
     bool m_drawsContent;
+    bool m_forceRenderSurface;
+
+    // Set for the layer that other layers are fixed to.
+    bool m_isContainerForFixedPositionLayers;
+    // This is true if the layer should be fixed to the closest ancestor container.
+    bool m_fixedToContainerLayer;
 
     FloatSize m_scrollDelta;
     IntSize m_sentScrollDelta;
@@ -333,11 +377,11 @@ private:
     // Debug layer name.
     String m_debugName;
 
-    FilterOperations m_filters;
-    FilterOperations m_backgroundFilters;
+    WebKit::WebFilterOperations m_filters;
+    WebKit::WebFilterOperations m_backgroundFilters;
 
-    TransformationMatrix m_drawTransform;
-    TransformationMatrix m_screenSpaceTransform;
+    WebKit::WebTransformationMatrix m_drawTransform;
+    WebKit::WebTransformationMatrix m_screenSpaceTransform;
     bool m_drawTransformIsAnimating;
     bool m_screenSpaceTransformIsAnimating;
 
@@ -348,17 +392,24 @@ private:
     // The rect that contributes to the scissor when this layer is drawn.
     // Inherited by the parent layer and further restricted if this layer masks
     // to bounds.
+    // Uses target surface's space.
     IntRect m_clipRect;
+
+    // During drawing, identifies the region outside of which nothing should be drawn.
+    // Uses target surface's space.
+    IntRect m_scissorRect;
 
     // Render surface associated with this layer. The layer and its descendants
     // will render to this surface.
     OwnPtr<CCRenderSurface> m_renderSurface;
 
     // Hierarchical bounding rect containing the layer and its descendants.
+    // Uses target surface's space.
     IntRect m_drawableContentRect;
 
     // Rect indicating what was repainted/updated during update.
     // Note that plugin layers bypass this and leave it empty.
+    // Uses layer's content space.
     FloatRect m_updateRect;
 
     // Manages animations for this layer.

@@ -113,6 +113,7 @@
 #import <WebCore/SimpleFontData.h>
 #import <WebCore/StylePropertySet.h>
 #import <WebCore/Text.h>
+#import <WebCore/TextAlternativeWithRange.h>
 #import <WebCore/WebCoreObjCExtras.h>
 #import <WebCore/WebFontCache.h>
 #import <WebCore/WebNSAttributedStringExtras.h>
@@ -209,6 +210,20 @@ static WebMenuTarget* target;
 - (BOOL)isFlipped
 {
     return YES;
+}
+@end
+
+@interface WebRootLayer : CALayer
+@end
+
+@implementation WebRootLayer
+- (void)renderInContext:(CGContextRef)ctx
+{
+    // AppKit calls -[CALayer renderInContext:] to render layer-backed views
+    // into bitmap contexts, but renderInContext: doesn't capture mask layers
+    // (<rdar://problem/9539526>), so we can't rely on it. Since our layer
+    // contents will have already been rendered by drawRect:, we can safely make
+    // this a NOOP.
 }
 @end
 
@@ -2271,15 +2286,6 @@ static bool mouseEventIsPartOfClickOrDrag(NSEvent *event)
 
 @end
 
-static bool matchesExtensionOrEquivalent(NSString *filename, NSString *extension)
-{
-    NSString *extensionAsSuffix = [@"." stringByAppendingString:extension];
-    return [filename _webkit_hasCaseInsensitiveSuffix:extensionAsSuffix]
-        || ([extension _webkit_isCaseInsensitiveEqualToString:@"jpeg"]
-            && [filename _webkit_hasCaseInsensitiveSuffix:@".jpg"]);
-}
-
-
 @implementation WebHTMLView
 
 + (void)initialize
@@ -3512,8 +3518,10 @@ static void setMenuTargets(NSMenu* menu)
             coreFrame->eventHandler()->setActivationEventNumber([event eventNumber]);
             [hitHTMLView _setMouseDownEvent:event];
             if ([hitHTMLView _isSelectionEvent:event]) {
+#if ENABLE(DRAG_SUPPORT)
                 if (Page* page = coreFrame->page())
                     result = coreFrame->eventHandler()->eventMayStartDrag(PlatformEventFactory::createPlatformMouseEvent(event, page->chrome()->platformPageClient()));
+#endif
             } else if ([hitHTMLView _isScrollBarEvent:event])
                 result = true;
             [hitHTMLView _setMouseDownEvent:nil];
@@ -3535,12 +3543,14 @@ static void setMenuTargets(NSMenu* menu)
     if (hitHTMLView) {
         bool result = false;
         if ([hitHTMLView _isSelectionEvent:event]) {
+            [hitHTMLView _setMouseDownEvent:event];
+#if ENABLE(DRAG_SUPPORT)
             if (Frame* coreFrame = core([hitHTMLView _frame])) {
-                [hitHTMLView _setMouseDownEvent:event];
                 if (Page* page = coreFrame->page())
                     result = coreFrame->eventHandler()->eventMayStartDrag(PlatformEventFactory::createPlatformMouseEvent(event, page->chrome()->platformPageClient()));
-                [hitHTMLView _setMouseDownEvent:nil];
             }
+#endif
+            [hitHTMLView _setMouseDownEvent:nil];
         }
         return result;
     }
@@ -3584,6 +3594,7 @@ done:
     _private->handlingMouseDownEvent = NO;
 }
 
+#if ENABLE(DRAG_SUPPORT)
 - (void)dragImage:(NSImage *)dragImage
                at:(NSPoint)at
            offset:(NSSize)offset
@@ -3660,6 +3671,14 @@ done:
     [self mouseUp:fakeEvent]; // This will also update the mouseover state.
 }
 
+static bool matchesExtensionOrEquivalent(NSString *filename, NSString *extension)
+{
+    NSString *extensionAsSuffix = [@"." stringByAppendingString:extension];
+    return [filename _webkit_hasCaseInsensitiveSuffix:extensionAsSuffix]
+    || ([extension _webkit_isCaseInsensitiveEqualToString:@"jpeg"]
+        && [filename _webkit_hasCaseInsensitiveSuffix:@".jpg"]);
+}
+
 - (NSArray *)namesOfPromisedFilesDroppedAtDestination:(NSURL *)dropDestination
 {
     NSFileWrapper *wrapper = nil;
@@ -3717,6 +3736,7 @@ noPromisedData:
     
     return [NSArray arrayWithObject:[path lastPathComponent]];
 }
+#endif
 
 - (void)mouseUp:(NSEvent *)event
 {
@@ -5466,7 +5486,7 @@ static CGPoint coreGraphicsScreenPointForAppKitScreenPoint(NSPoint point)
     }
 
     // Make a container layer, which will get sized/positioned by AppKit and CA.
-    CALayer* viewLayer = [CALayer layer];
+    CALayer* viewLayer = [WebRootLayer layer];
 
 #ifdef BUILDING_ON_LEOPARD
     // Turn off default animations.
@@ -5584,7 +5604,11 @@ static CGPoint coreGraphicsScreenPointForAppKitScreenPoint(NSPoint point)
     if (!validAttributes) {
         validAttributes = [[NSArray alloc] initWithObjects:
             NSUnderlineStyleAttributeName, NSUnderlineColorAttributeName,
-            NSMarkedClauseSegmentAttributeName, NSTextInputReplacementRangeAttributeName, nil];
+            NSMarkedClauseSegmentAttributeName, NSTextInputReplacementRangeAttributeName,
+#if USE(DICTATION_ALTERNATIVES)
+                           NSTextAlternativesAttributeName,
+#endif
+                           nil];
         // NSText also supports the following attributes, but it's
         // hard to tell which are really required for text input to
         // work well; I have not seen any input method make use of them yet.
@@ -5904,7 +5928,14 @@ static void extractUnderlines(NSAttributedString *string, Vector<CompositionUnde
     NSRange replacementRange = { NSNotFound, 0 };
     bool isFromInputMethod = coreFrame && coreFrame->editor()->hasComposition();
 
+    Vector<DictationAlternative> dictationAlternativeLocations;
     if (isAttributedString) {
+#if USE(DICTATION_ALTERNATIVES)
+        Vector<WebCore::TextAlternativeWithRange> textAlternatives;
+        collectDictationTextAlternatives(string, textAlternatives);
+        if (!textAlternatives.isEmpty())
+            [[self _webView] _getWebCoreDictationAlternatives:dictationAlternativeLocations fromTextAlternatives:textAlternatives];
+#endif
         // FIXME: We ignore most attributes from the string, so for example inserting from Character Palette loses font and glyph variation data.
         // It does not look like any input methods ever use insertText: with attributes other than NSTextInputReplacementRangeAttributeName.
         text = [string string];
@@ -5943,7 +5974,11 @@ static void extractUnderlines(NSAttributedString *string, Vector<CompositionUnde
     if (!coreFrame->editor()->hasComposition()) {
         // An insertText: might be handled by other responders in the chain if we don't handle it.
         // One example is space bar that results in scrolling down the page.
-        eventHandled = coreFrame->editor()->insertText(eventText, event);
+
+        if (!dictationAlternativeLocations.isEmpty())
+            eventHandled = coreFrame->editor()->insertDictatedText(eventText, dictationAlternativeLocations, event);
+        else
+            eventHandled = coreFrame->editor()->insertText(eventText, event);
     } else {
         eventHandled = true;
         coreFrame->editor()->confirmComposition(eventText);

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2008, 2012 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -48,6 +48,7 @@ namespace JSC {
 
 class LinkBuffer;
 class RepatchBuffer;
+class Watchpoint;
 namespace DFG {
 class CorrectableJumpPoint;
 }
@@ -69,7 +70,6 @@ public:
     //
     // The following types are used as operands to MacroAssembler operations,
     // describing immediate  and memory operands to the instructions to be planted.
-
 
     enum Scale {
         TimesOne,
@@ -171,6 +171,8 @@ public:
     // in a class requiring explicit construction in order to differentiate
     // from pointers used as absolute addresses to memory operations
     struct TrustedImmPtr {
+        TrustedImmPtr() { }
+        
         explicit TrustedImmPtr(const void* value)
             : m_value(value)
         {
@@ -219,35 +221,21 @@ public:
     // (which are implemented as an enum) from accidentally being passed as
     // immediate values.
     struct TrustedImm32 {
+        TrustedImm32() { }
+        
         explicit TrustedImm32(int32_t value)
             : m_value(value)
-#if CPU(ARM) || CPU(MIPS)
-            , m_isPointer(false)
-#endif
         {
         }
 
 #if !CPU(X86_64)
         explicit TrustedImm32(TrustedImmPtr ptr)
             : m_value(ptr.asIntptr())
-#if CPU(ARM) || CPU(MIPS)
-            , m_isPointer(true)
-#endif
         {
         }
 #endif
 
         int32_t m_value;
-#if CPU(ARM) || CPU(MIPS)
-        // We rely on being able to regenerate code to recover exception handling
-        // information.  Since ARMv7 supports 16-bit immediates there is a danger
-        // that if pointer values change the layout of the generated code will change.
-        // To avoid this problem, always generate pointers (and thus Imm32s constructed
-        // from ImmPtrs) with a code sequence that is able  to represent  any pointer
-        // value - don't use a more compact form in these cases.
-        // Same for MIPS.
-        bool m_isPointer;
-#endif
     };
 
 
@@ -291,6 +279,7 @@ public:
         friend class Jump;
         friend class MacroAssemblerCodeRef;
         friend class LinkBuffer;
+        friend class Watchpoint;
 
     public:
         Label()
@@ -566,9 +555,25 @@ public:
 
 
     // Section 3: Misc admin methods
+#if ENABLE(DFG_JIT)
+    Label labelIgnoringWatchpoints()
+    {
+        Label result;
+        result.m_label = m_assembler.labelIgnoringWatchpoints();
+        return result;
+    }
+#endif
+    
     Label label()
     {
         return Label(this);
+    }
+    
+    Label watchpointLabel()
+    {
+        Label result;
+        result.m_label = m_assembler.labelForWatchpoint();
+        return result;
     }
     
     Label align()
@@ -590,6 +595,10 @@ public:
 
     unsigned debugOffset() { return m_assembler.debugOffset(); }
 
+    ALWAYS_INLINE static void cacheFlush(void* code, size_t size)
+    {
+        AssemblerType::cacheFlush(code, size);
+    }
 protected:
     AbstractMacroAssembler()
         : m_randomSource(cryptographicallyRandomNumber())
@@ -662,18 +671,6 @@ protected:
     static void* readPointer(CodeLocationDataLabelPtr dataLabelPtr)
     {
         return AssemblerType::readPointer(dataLabelPtr.dataLocation());
-    }
-    
-    static void unreachableForPlatform()
-    {
-#if COMPILER(CLANG)
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wmissing-noreturn"
-        ASSERT_NOT_REACHED();
-#pragma clang diagnostic pop
-#else
-        ASSERT_NOT_REACHED();
-#endif
     }
 };
 

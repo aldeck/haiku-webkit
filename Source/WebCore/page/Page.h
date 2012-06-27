@@ -91,6 +91,16 @@ namespace WebCore {
 
     float deviceScaleFactor(Frame*);
 
+    struct ArenaSize {
+        ArenaSize(size_t treeSize, size_t allocated)
+            : treeSize(treeSize)
+            , allocated(allocated)
+        {
+        }
+        size_t treeSize;
+        size_t allocated;
+    };
+
     class Page : public Supplementable<Page> {
         WTF_MAKE_NONCOPYABLE(Page);
         friend class Settings;
@@ -118,7 +128,7 @@ namespace WebCore {
         Page(PageClients&);
         ~Page();
 
-        size_t renderTreeSize() const;
+        ArenaSize renderTreeSize() const;
 
         void setNeedsRecalcStyleInAllFrames();
 
@@ -227,9 +237,6 @@ namespace WebCore {
         bool inLowQualityImageInterpolationMode() const;
         void setInLowQualityImageInterpolationMode(bool = true);
 
-        bool cookieEnabled() const { return m_cookieEnabled; }
-        void setCookieEnabled(bool enabled) { m_cookieEnabled = enabled; }
-
         float mediaVolume() const { return m_mediaVolume; }
         void setMediaVolume(float volume);
 
@@ -240,7 +247,7 @@ namespace WebCore {
         void setDeviceScaleFactor(float);
 
         struct Pagination {
-            enum Mode { Unpaginated, HorizontallyPaginated, VerticallyPaginated };
+            enum Mode { Unpaginated, LeftToRightPaginated, RightToLeftPaginated, TopToBottomPaginated, BottomToTopPaginated };
 
             Pagination()
                 : mode(Unpaginated)

@@ -5,7 +5,7 @@ On success, you will see a series of "PASS" messages, followed by "TEST COMPLETE
 
 indexedDB = self.indexedDB || self.webkitIndexedDB || self.mozIndexedDB || self.msIndexedDB || self.OIndexedDB;
 
-indexedDB.open(name, description)
+indexedDB.open(name)
 db = event.target.result
 request = db.setVersion('1')
 Deleted all object stores.
@@ -431,7 +431,7 @@ request = objectStore.get(sortedKeys[4]);
 PASS event.target.result is 'bar'
 request = objectStore.put('foo', sortedKeys[4]);
 keyIndex = 0;
-request = objectStore.openCursor(null, IDBCursor.NEXT);
+request = objectStore.openCursor(null, 'next');
 cursor = event.target.result;
 PASS cursor.key is sortedKeys[keyIndex]
 PASS cursor.primaryKey is sortedKeys[keyIndex]
@@ -501,7 +501,7 @@ PASS gotRemoveEvent is true
 request = objectStore.get(sortedKeys[4]);
 PASS event.target.result is undefined
 request = objectStore.add('foo', sortedKeys[4]);
-request = objectStore.openCursor(null, IDBCursor.PREV);
+request = objectStore.openCursor(null, 'prev');
 cursor = event.target.result;
 PASS cursor.key is sortedKeys[keyIndex]
 PASS cursor.primaryKey is sortedKeys[keyIndex]

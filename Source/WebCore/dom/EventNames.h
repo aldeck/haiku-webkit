@@ -220,10 +220,14 @@ namespace WebCore {
     macro(show) \
     \
     macro(webkitpointerlocklost) \
+    macro(webkitpointerlockchange) \
+    macro(webkitpointerlockerror) \
     \
     macro(webkitRegionLayoutUpdate) \
     \
     macro(webkitnetworkinfochange) \
+    \
+    macro(webkitresourcetimingbufferfull) \
     \
 
 // end of DOM_EVENT_NAMES_FOR_EACH

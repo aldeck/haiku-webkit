@@ -293,6 +293,11 @@
 #define WTF_CPU_ARM_NEON 1
 #endif
 
+#if CPU(ARM_NEON) && (!COMPILER(GCC) || GCC_VERSION_AT_LEAST(4, 7, 0))
+// All NEON intrinsics usage can be disabled by this macro.
+#define HAVE_ARM_NEON_INTRINSICS 1
+#endif
+
 #endif /* ARM */
 
 #if CPU(ARM) || CPU(MIPS) || CPU(SH4) || CPU(SPARC)
@@ -471,19 +476,18 @@
 /* USE(SKIA) for Win/Linux/Mac/Android */
 #if PLATFORM(CHROMIUM)
 #if OS(DARWIN)
-#if USE(SKIA_ON_MAC_CHROMIUM)
 #define WTF_USE_SKIA 1
-#else
-#define WTF_USE_CG 1
-#endif
 #define WTF_USE_ATSUI 1
 #define WTF_USE_CORE_TEXT 1
 #define WTF_USE_ICCJPEG 1
+#define WTF_USE_QCMSLIB 1
 #elif OS(ANDROID)
 #define WTF_USE_SKIA 1
 #else
 #define WTF_USE_SKIA 1
 #define WTF_USE_CHROMIUM_NET 1
+#define WTF_USE_ICCJPEG 1
+#define WTF_USE_QCMSLIB 1
 #endif
 #endif
 
@@ -560,6 +564,8 @@
 #if !defined(BUILDING_ON_LEOPARD) && !defined(BUILDING_ON_SNOW_LEOPARD) && !defined(BUILDING_ON_LION)
 #define HAVE_LAYER_HOSTING_IN_WINDOW_SERVER 1
 #endif
+#define WTF_USE_APPKIT 1
+#define WTF_USE_SECURITY_FRAMEWORK 1
 #endif /* PLATFORM(MAC) && !PLATFORM(IOS) */
 
 #if PLATFORM(CHROMIUM) && OS(DARWIN)
@@ -611,6 +617,8 @@
     #define ENABLE_YARR_JIT 1
 #endif
 
+#define WTF_USE_APPKIT 0
+#define WTF_USE_SECURITY_FRAMEWORK 0
 #endif
 
 #if PLATFORM(WIN) && !OS(WINCE)
@@ -648,12 +656,7 @@
 #endif
 #endif
 
-#if PLATFORM(GTK)
-#if HAVE(PTHREAD_H)
-#define WTF_USE_PTHREADS 1
-#define HAVE_PTHREAD_RWLOCK 1
-#endif
-#elif PLATFORM(QT) && OS(UNIX)
+#if OS(UNIX) && (PLATFORM(GTK) || PLATFORM(QT))
 #define WTF_USE_PTHREADS 1
 #define HAVE_PTHREAD_RWLOCK 1
 #endif
@@ -684,7 +687,7 @@
 #endif
 
 #if !defined(HAVE_ACCESSIBILITY)
-#if PLATFORM(IOS) || PLATFORM(MAC) || PLATFORM(WIN) || PLATFORM(GTK) || PLATFORM(CHROMIUM)
+#if PLATFORM(IOS) || PLATFORM(MAC) || PLATFORM(WIN) || PLATFORM(GTK) || (PLATFORM(CHROMIUM) && !OS(ANDROID))
 #define HAVE_ACCESSIBILITY 1
 #endif
 #endif /* !defined(HAVE_ACCESSIBILITY) */
@@ -844,8 +847,16 @@
 #define ENABLE_GLOBAL_FASTMALLOC_NEW 1
 #endif
 
+#if !defined(ENABLE_PARSED_STYLE_SHEET_CACHING)
+#define ENABLE_PARSED_STYLE_SHEET_CACHING 1
+#endif
+
 #if !defined(ENABLE_SUBPIXEL_LAYOUT)
+#if PLATFORM(CHROMIUM)
+#define ENABLE_SUBPIXEL_LAYOUT 1 
+#else
 #define ENABLE_SUBPIXEL_LAYOUT 0
+#endif
 #endif
 
 #define ENABLE_DEBUG_WITH_BREAKPOINT 0
@@ -901,9 +912,24 @@
 #define ENABLE_JIT 1
 #endif
 
+/* If possible, try to enable a disassembler. This is optional. We proceed in two
+   steps: first we try to find some disassembler that we can use, and then we
+   decide if the high-level disassembler API can be enabled. */
+#if !defined(WTF_USE_UDIS86) && ENABLE(JIT) && PLATFORM(MAC) && (CPU(X86) || CPU(X86_64))
+#define WTF_USE_UDIS86 1
+#endif
+
+#if !defined(ENABLE_DISASSEMBLER) && USE(UDIS86)
+#define ENABLE_DISASSEMBLER 1
+#endif
+
 /* On some of the platforms where we have a JIT, we want to also have the 
    low-level interpreter. */
-#if !defined(ENABLE_LLINT) && ENABLE(JIT) && (OS(DARWIN) && !PLATFORM(QT)) && (CPU(X86) || CPU(X86_64) || CPU(ARM_THUMB2))
+#if !defined(ENABLE_LLINT) \
+    && ENABLE(JIT) \
+    && (OS(DARWIN) || OS(LINUX)) \
+    && (PLATFORM(MAC) || PLATFORM(IOS) || PLATFORM(GTK)) \
+    && (CPU(X86) || CPU(X86_64) || CPU(ARM_THUMB2))
 #define ENABLE_LLINT 1
 #endif
 
@@ -1032,7 +1058,7 @@
 #define WTF_USE_PROTECTION_SPACE_AUTH_CALLBACK 1
 #endif
 
-#if !ENABLE(NETSCAPE_PLUGIN_API) || (ENABLE(NETSCAPE_PLUGIN_API) && ((OS(UNIX) && (PLATFORM(QT) || PLATFORM(WX))) || PLATFORM(GTK) || PLATFORM(EFL)))
+#if !ENABLE(NETSCAPE_PLUGIN_API) || (ENABLE(NETSCAPE_PLUGIN_API) && ((OS(UNIX) && (PLATFORM(GTK) || PLATFORM(QT) || PLATFORM(WX))) || PLATFORM(EFL)))
 #define ENABLE_PLUGIN_PACKAGE_SIMPLE_HASH 1
 #endif
 
@@ -1044,7 +1070,7 @@
 #define WTF_PLATFORM_CFNETWORK Error USE_macro_should_be_used_with_CFNETWORK
 
 /* FIXME: Eventually we should enable this for all platforms and get rid of the define. */
-#if PLATFORM(IOS) || PLATFORM(MAC) || PLATFORM(WIN) || PLATFORM(QT) || PLATFORM(GTK)
+#if PLATFORM(IOS) || PLATFORM(MAC) || PLATFORM(WIN) || PLATFORM(QT) || PLATFORM(GTK) || PLATFORM(EFL)
 #define WTF_USE_PLATFORM_STRATEGIES 1
 #endif
 
@@ -1084,11 +1110,13 @@
 #define WTF_USE_UNIX_DOMAIN_SOCKETS 1
 #endif
 
-#if !defined(ENABLE_COMPARE_AND_SWAP) && COMPILER(GCC) && (CPU(X86) || CPU(X86_64) || CPU(ARM_THUMB2))
+#if !defined(ENABLE_COMPARE_AND_SWAP) && (OS(WINDOWS) || (COMPILER(GCC) && (CPU(X86) || CPU(X86_64) || CPU(ARM_THUMB2))))
 #define ENABLE_COMPARE_AND_SWAP 1
 #endif
 
-#if !defined(ENABLE_PARALLEL_GC) && (PLATFORM(MAC) || PLATFORM(IOS) || PLATFORM(QT) || PLATFORM(BLACKBERRY)) && ENABLE(COMPARE_AND_SWAP)
+#define ENABLE_OBJECT_MARK_LOGGING 0
+
+#if !defined(ENABLE_PARALLEL_GC) && !ENABLE(OBJECT_MARK_LOGGING) && (PLATFORM(MAC) || PLATFORM(IOS) || PLATFORM(QT) || PLATFORM(BLACKBERRY)) && ENABLE(COMPARE_AND_SWAP)
 #define ENABLE_PARALLEL_GC 1
 #endif
 
@@ -1135,6 +1163,13 @@
 
 #if !defined(WTF_USE_ZLIB) && !PLATFORM(QT)
 #define WTF_USE_ZLIB 1
+#endif
+
+#if PLATFORM(QT)
+#include <qglobal.h>
+#if defined(QT_OPENGL_ES_2) && !defined(WTF_USE_OPENGL_ES_2)
+#define WTF_USE_OPENGL_ES_2 1
+#endif
 #endif
 
 #endif /* WTF_Platform_h */

@@ -32,8 +32,11 @@ CCSchedulerStateMachine::CCSchedulerStateMachine()
     : m_commitState(COMMIT_STATE_IDLE)
     , m_currentFrameNumber(0)
     , m_lastFrameNumberWhereDrawWasCalled(-1)
+    , m_consecutiveFailedDraws(0)
+    , m_maximumNumberOfFailedDrawsBeforeDrawIsForced(3)
     , m_needsRedraw(false)
     , m_needsForcedRedraw(false)
+    , m_needsForcedRedrawAfterNextCommit(false)
     , m_needsCommit(false)
     , m_needsForcedCommit(false)
     , m_mainThreadNeedsLayerTextures(false)
@@ -57,6 +60,8 @@ bool CCSchedulerStateMachine::drawSuspendedUntilCommit() const
 {
     if (!m_canDraw)
         return true;
+    if (!m_visible)
+        return true;
     if (m_textureState == LAYER_TEXTURE_STATE_ACQUIRED_BY_MAIN_THREAD)
         return true;
     return false;
@@ -65,8 +70,6 @@ bool CCSchedulerStateMachine::drawSuspendedUntilCommit() const
 bool CCSchedulerStateMachine::scheduledToDraw() const
 {
     if (!m_needsRedraw)
-        return false;
-    if (!m_visible)
         return false;
     if (drawSuspendedUntilCommit())
         return false;
@@ -177,9 +180,16 @@ void CCSchedulerStateMachine::updateState(Action action)
             m_commitState = COMMIT_STATE_WAITING_FOR_FIRST_DRAW;
         else
             m_commitState = COMMIT_STATE_IDLE;
+
         m_needsRedraw = true;
         if (m_drawIfPossibleFailed)
             m_lastFrameNumberWhereDrawWasCalled = -1;
+
+        if (m_needsForcedRedrawAfterNextCommit) {
+            m_needsForcedRedrawAfterNextCommit = false;
+            m_needsForcedRedraw = true;
+        }
+
         m_textureState = LAYER_TEXTURE_STATE_ACQUIRED_BY_IMPL_THREAD;
         return;
 
@@ -190,10 +200,8 @@ void CCSchedulerStateMachine::updateState(Action action)
         m_drawIfPossibleFailed = false;
         if (m_insideVSync)
             m_lastFrameNumberWhereDrawWasCalled = m_currentFrameNumber;
-        if (m_commitState == COMMIT_STATE_WAITING_FOR_FIRST_DRAW) {
-            ASSERT(m_needsCommit || !m_visible);
+        if (m_commitState == COMMIT_STATE_WAITING_FOR_FIRST_DRAW)
             m_commitState = COMMIT_STATE_IDLE;
-        }
         if (m_textureState == LAYER_TEXTURE_STATE_ACQUIRED_BY_IMPL_THREAD)
             m_textureState = LAYER_TEXTURE_STATE_UNLOCKED;
         return;
@@ -264,7 +272,15 @@ void CCSchedulerStateMachine::didDrawIfPossibleCompleted(bool success)
     if (m_drawIfPossibleFailed) {
         m_needsRedraw = true;
         m_needsCommit = true;
-    }
+        m_consecutiveFailedDraws++;
+        if (m_consecutiveFailedDraws >= m_maximumNumberOfFailedDrawsBeforeDrawIsForced) {
+            m_consecutiveFailedDraws = 0;
+            // We need to force a draw, but it doesn't make sense to do this until
+            // we've committed and have new textures.
+            m_needsForcedRedrawAfterNextCommit = true;
+        }
+    } else
+      m_consecutiveFailedDraws = 0;
 }
 
 void CCSchedulerStateMachine::setNeedsCommit()
@@ -304,6 +320,11 @@ void CCSchedulerStateMachine::didRecreateContext()
     ASSERT(m_contextState == CONTEXT_RECREATING);
     m_contextState = CONTEXT_ACTIVE;
     setNeedsCommit();
+}
+
+void CCSchedulerStateMachine::setMaximumNumberOfFailedDrawsBeforeDrawIsForced(int numDraws)
+{
+    m_maximumNumberOfFailedDrawsBeforeDrawIsForced = numDraws;
 }
 
 }

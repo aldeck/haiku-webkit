@@ -55,9 +55,14 @@ void RenderSVGModelObject::computeFloatRectForRepaint(RenderBoxModelObject* repa
     SVGRenderSupport::computeFloatRectForRepaint(this, repaintContainer, repaintRect, fixed);
 }
 
-void RenderSVGModelObject::mapLocalToContainer(RenderBoxModelObject* repaintContainer, bool /* fixed */, bool /* useTransforms */, TransformState& transformState, bool* wasFixed) const
+void RenderSVGModelObject::mapLocalToContainer(RenderBoxModelObject* repaintContainer, bool /* fixed */, bool /* useTransforms */, TransformState& transformState, ApplyContainerFlipOrNot, bool* wasFixed) const
 {
     SVGRenderSupport::mapLocalToContainer(this, repaintContainer, transformState, wasFixed);
+}
+
+const RenderObject* RenderSVGModelObject::pushMappingToContainer(const RenderBoxModelObject* ancestorToStopAt, RenderGeometryMap& geometryMap) const
+{
+    return SVGRenderSupport::pushMappingToContainer(this, ancestorToStopAt, geometryMap);
 }
 
 // Copied from RenderBox, this method likely requires further refactoring to work easily for both SVG and CSS Box Model content.
@@ -106,13 +111,7 @@ void RenderSVGModelObject::styleDidChange(StyleDifference diff, const RenderStyl
     SVGResourcesCache::clientStyleChanged(this, diff, style());
 }
 
-void RenderSVGModelObject::updateFromElement()
-{
-    RenderObject::updateFromElement();
-    SVGResourcesCache::clientUpdatedFromElement(this, style());
-}
-
-bool RenderSVGModelObject::nodeAtPoint(const HitTestRequest&, HitTestResult&, const LayoutPoint&, const LayoutPoint&, HitTestAction)
+bool RenderSVGModelObject::nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestPoint&, const LayoutPoint&, HitTestAction)
 {
     ASSERT_NOT_REACHED();
     return false;
@@ -172,8 +171,10 @@ bool RenderSVGModelObject::checkIntersection(RenderObject* renderer, const Float
     if (!isGraphicsElement(renderer))
         return false;
     AffineTransform ctm;
-    getElementCTM(static_cast<SVGElement*>(renderer->node()), ctm);
-    return intersectsAllowingEmpty(rect, ctm.mapRect(renderer->repaintRectInLocalCoordinates()));
+    SVGElement* svgElement = static_cast<SVGElement*>(renderer->node());
+    getElementCTM(svgElement, ctm);
+    ASSERT(svgElement->renderer());
+    return intersectsAllowingEmpty(rect, ctm.mapRect(svgElement->renderer()->repaintRectInLocalCoordinates()));
 }
 
 bool RenderSVGModelObject::checkEnclosure(RenderObject* renderer, const FloatRect& rect)
@@ -183,8 +184,10 @@ bool RenderSVGModelObject::checkEnclosure(RenderObject* renderer, const FloatRec
     if (!isGraphicsElement(renderer))
         return false;
     AffineTransform ctm;
-    getElementCTM(static_cast<SVGElement*>(renderer->node()), ctm);
-    return rect.contains(ctm.mapRect(renderer->repaintRectInLocalCoordinates()));
+    SVGElement* svgElement = static_cast<SVGElement*>(renderer->node());
+    getElementCTM(svgElement, ctm);
+    ASSERT(svgElement->renderer());
+    return rect.contains(ctm.mapRect(svgElement->renderer()->repaintRectInLocalCoordinates()));
 }
 
 } // namespace WebCore

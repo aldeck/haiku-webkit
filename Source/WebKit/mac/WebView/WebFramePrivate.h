@@ -87,9 +87,6 @@ typedef enum {
 
 - (unsigned)_pendingFrameUnloadEventCount;
 
-- (void)_setIsDisconnected:(bool)isDisconnected;
-- (void)_setExcludeFromTextSearch:(bool)exclude;
-
 #if ENABLE_NETSCAPE_PLUGIN_API
 - (void)_recursive_resumeNullEventsForAllNetscapePlugins;
 - (void)_recursive_pauseNullEventsForAllNetscapePlugins;
@@ -106,10 +103,6 @@ typedef enum {
 
 // Returns the total number of currently running animations (includes both CSS transitions and CSS animations).
 - (unsigned)_numberOfActiveAnimations;
-
-// Suspend and resume animations (includes both CSS transitions and CSS animations).
-- (void)_suspendAnimations;
-- (void)_resumeAnimations;
 
 - (void)_replaceSelectionWithFragment:(DOMDocumentFragment *)fragment selectReplacement:(BOOL)selectReplacement smartReplace:(BOOL)smartReplace matchStyle:(BOOL)matchStyle;
 - (void)_replaceSelectionWithText:(NSString *)text selectReplacement:(BOOL)selectReplacement smartReplace:(BOOL)smartReplace;

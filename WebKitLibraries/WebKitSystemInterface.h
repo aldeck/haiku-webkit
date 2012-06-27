@@ -92,6 +92,7 @@ void WKAccessibilityHandleFocusChanged(void);
 AXUIElementRef WKCreateAXUIElementRef(id element);
 void WKUnregisterUniqueIdForElement(id element);
 
+BOOL WKShouldBlockPlugin(NSString *bundleIdentifier, NSString *bundleVersionString);
 
 #if MAC_OS_X_VERSION_MIN_REQUIRED >= 1060
 // Remote Accessibility API.
@@ -347,6 +348,8 @@ void WKCAContextInvalidate(WKCAContextRef);
 uint32_t WKCAContextGetContextId(WKCAContextRef);
 void WKCAContextSetLayer(WKCAContextRef, CALayer *);
 CALayer *WKCAContextGetLayer(WKCAContextRef);
+void WKCAContextSetColorSpace(WKCAContextRef, CGColorSpaceRef);
+CGColorSpaceRef WKCAContextGetColorSpace(WKCAContextRef);
 
 #if MAC_OS_X_VERSION_MIN_REQUIRED >= 1070
 void WKCALayerEnumerateRectsBeingDrawnWithBlock(CALayer *layer, CGContextRef context, void (^block)(CGRect rect));
@@ -486,6 +489,25 @@ bool WKExecutableWasLinkedOnOrBeforeLion(void);
 
 #if MAC_OS_X_VERSION_MIN_REQUIRED >= 1070
 void WKCGPathAddRoundedRect(CGMutablePathRef path, const CGAffineTransform* matrix, CGRect rect, CGFloat cornerWidth, CGFloat cornerHeight);
+#endif
+
+#if MAC_OS_X_VERSION_MIN_REQUIRED >= 1070
+void WKCFURLRequestAllowAllPostCaching(CFURLRequestRef);
+#endif
+
+#if MAC_OS_X_VERSION_MIN_REQUIRED >= 1080
+@class WebFilterEvaluator;
+
+BOOL WKFilterIsManagedSession(void);
+WebFilterEvaluator *WKFilterCreateInstance(NSURLResponse *);
+void WKFilterRelease(WebFilterEvaluator *);
+BOOL WKFilterWasBlocked(WebFilterEvaluator *);
+const char* WKFilterAddData(WebFilterEvaluator *, const char* data, int* length);
+const char* WKFilterDataComplete(WebFilterEvaluator *, int* length);
+
+CGFloat WKNSElasticDeltaForTimeDelta(CGFloat initialPosition, CGFloat initialVelocity, CGFloat elapsedTime);
+CGFloat WKNSElasticDeltaForReboundDelta(CGFloat delta);
+CGFloat WKNSReboundDeltaForElasticDelta(CGFloat delta);
 #endif
 
 #ifdef __cplusplus

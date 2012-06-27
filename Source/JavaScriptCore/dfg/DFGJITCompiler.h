@@ -28,15 +28,16 @@
 
 #if ENABLE(DFG_JIT)
 
-#include <assembler/LinkBuffer.h>
-#include <assembler/MacroAssembler.h>
-#include <bytecode/CodeBlock.h>
-#include <dfg/DFGCCallHelpers.h>
-#include <dfg/DFGFPRInfo.h>
-#include <dfg/DFGGPRInfo.h>
-#include <dfg/DFGGraph.h>
-#include <dfg/DFGRegisterBank.h>
-#include <jit/JITCode.h>
+#include "CodeBlock.h"
+#include "DFGCCallHelpers.h"
+#include "DFGDisassembler.h"
+#include "DFGFPRInfo.h"
+#include "DFGGPRInfo.h"
+#include "DFGGraph.h"
+#include "DFGRegisterBank.h"
+#include "JITCode.h"
+#include "LinkBuffer.h"
+#include "MacroAssembler.h"
 
 namespace JSC {
 
@@ -48,6 +49,7 @@ namespace DFG {
 
 class JITCodeGenerator;
 class NodeToRegisterMap;
+class SlowPathGenerator;
 class SpeculativeJIT;
 class SpeculationRecovery;
 
@@ -130,22 +132,43 @@ struct PropertyAccessRecord {
     enum RegisterMode { RegistersFlushed, RegistersInUse };
     
 #if USE(JSVALUE64)
-    PropertyAccessRecord(CodeOrigin codeOrigin, MacroAssembler::DataLabelPtr deltaCheckImmToCall, MacroAssembler::Call functionCall, MacroAssembler::PatchableJump deltaCallToStructCheck, MacroAssembler::DataLabelCompact deltaCallToLoadOrStore, MacroAssembler::Label deltaCallToSlowCase, MacroAssembler::Label deltaCallToDone, int8_t baseGPR, int8_t valueGPR, int8_t scratchGPR, RegisterMode registerMode = RegistersInUse)
+    PropertyAccessRecord(
+        CodeOrigin codeOrigin,
+        MacroAssembler::DataLabelPtr structureImm,
+        MacroAssembler::PatchableJump structureCheck,
+        MacroAssembler::DataLabelCompact loadOrStore,
+        SlowPathGenerator* slowPathGenerator,
+        MacroAssembler::Label done,
+        int8_t baseGPR,
+        int8_t valueGPR,
+        int8_t scratchGPR,
+        RegisterMode registerMode = RegistersInUse)
 #elif USE(JSVALUE32_64)
-    PropertyAccessRecord(CodeOrigin codeOrigin, MacroAssembler::DataLabelPtr deltaCheckImmToCall, MacroAssembler::Call functionCall, MacroAssembler::PatchableJump deltaCallToStructCheck, MacroAssembler::DataLabelCompact deltaCallToTagLoadOrStore, MacroAssembler::DataLabelCompact deltaCallToPayloadLoadOrStore, MacroAssembler::Label deltaCallToSlowCase, MacroAssembler::Label deltaCallToDone, int8_t baseGPR, int8_t valueTagGPR, int8_t valueGPR, int8_t scratchGPR, RegisterMode registerMode = RegistersInUse)
+    PropertyAccessRecord(
+        CodeOrigin codeOrigin,
+        MacroAssembler::DataLabelPtr structureImm,
+        MacroAssembler::PatchableJump structureCheck,
+        MacroAssembler::DataLabelCompact tagLoadOrStore,
+        MacroAssembler::DataLabelCompact payloadLoadOrStore,
+        SlowPathGenerator* slowPathGenerator,
+        MacroAssembler::Label done,
+        int8_t baseGPR,
+        int8_t valueTagGPR,
+        int8_t valueGPR,
+        int8_t scratchGPR,
+        RegisterMode registerMode = RegistersInUse)
 #endif
         : m_codeOrigin(codeOrigin)
-        , m_deltaCheckImmToCall(deltaCheckImmToCall)
-        , m_functionCall(functionCall)
-        , m_deltaCallToStructCheck(deltaCallToStructCheck)
+        , m_structureImm(structureImm)
+        , m_structureCheck(structureCheck)
 #if USE(JSVALUE64)
-        , m_deltaCallToLoadOrStore(deltaCallToLoadOrStore)
+        , m_loadOrStore(loadOrStore)
 #elif USE(JSVALUE32_64)
-        , m_deltaCallToTagLoadOrStore(deltaCallToTagLoadOrStore)
-        , m_deltaCallToPayloadLoadOrStore(deltaCallToPayloadLoadOrStore)
+        , m_tagLoadOrStore(tagLoadOrStore)
+        , m_payloadLoadOrStore(payloadLoadOrStore)
 #endif
-        , m_deltaCallToSlowCase(deltaCallToSlowCase)
-        , m_deltaCallToDone(deltaCallToDone)
+        , m_slowPathGenerator(slowPathGenerator)
+        , m_done(done)
         , m_baseGPR(baseGPR)
 #if USE(JSVALUE32_64)
         , m_valueTagGPR(valueTagGPR)
@@ -157,17 +180,16 @@ struct PropertyAccessRecord {
     }
 
     CodeOrigin m_codeOrigin;
-    MacroAssembler::DataLabelPtr m_deltaCheckImmToCall;
-    MacroAssembler::Call m_functionCall;
-    MacroAssembler::PatchableJump m_deltaCallToStructCheck;
+    MacroAssembler::DataLabelPtr m_structureImm;
+    MacroAssembler::PatchableJump m_structureCheck;
 #if USE(JSVALUE64)
-    MacroAssembler::DataLabelCompact m_deltaCallToLoadOrStore;
+    MacroAssembler::DataLabelCompact m_loadOrStore;
 #elif USE(JSVALUE32_64)
-    MacroAssembler::DataLabelCompact m_deltaCallToTagLoadOrStore;
-    MacroAssembler::DataLabelCompact m_deltaCallToPayloadLoadOrStore;
+    MacroAssembler::DataLabelCompact m_tagLoadOrStore;
+    MacroAssembler::DataLabelCompact m_payloadLoadOrStore;
 #endif
-    MacroAssembler::Label m_deltaCallToSlowCase;
-    MacroAssembler::Label m_deltaCallToDone;
+    SlowPathGenerator* m_slowPathGenerator;
+    MacroAssembler::Label m_done;
     int8_t m_baseGPR;
 #if USE(JSVALUE32_64)
     int8_t m_valueTagGPR;
@@ -187,18 +209,49 @@ struct PropertyAccessRecord {
 // call to be linked).
 class JITCompiler : public CCallHelpers {
 public:
-    JITCompiler(Graph& dfg)
-        : CCallHelpers(&dfg.m_globalData, dfg.m_codeBlock)
-        , m_graph(dfg)
-        , m_currentCodeOriginIndex(0)
-    {
-    }
-
+    JITCompiler(Graph& dfg);
+    
     bool compile(JITCode& entry);
     bool compileFunction(JITCode& entry, MacroAssemblerCodePtr& entryWithArityCheck);
 
     // Accessors for properties.
     Graph& graph() { return m_graph; }
+    
+    // Methods to set labels for the disassembler.
+    void setStartOfCode()
+    {
+        if (LIKELY(!m_disassembler))
+            return;
+        m_disassembler->setStartOfCode(labelIgnoringWatchpoints());
+    }
+    
+    void setForBlock(BlockIndex blockIndex)
+    {
+        if (LIKELY(!m_disassembler))
+            return;
+        m_disassembler->setForBlock(blockIndex, labelIgnoringWatchpoints());
+    }
+    
+    void setForNode(NodeIndex nodeIndex)
+    {
+        if (LIKELY(!m_disassembler))
+            return;
+        m_disassembler->setForNode(nodeIndex, labelIgnoringWatchpoints());
+    }
+    
+    void setEndOfMainPath()
+    {
+        if (LIKELY(!m_disassembler))
+            return;
+        m_disassembler->setEndOfMainPath(labelIgnoringWatchpoints());
+    }
+    
+    void setEndOfCode()
+    {
+        if (LIKELY(!m_disassembler))
+            return;
+        m_disassembler->setEndOfCode(labelIgnoringWatchpoints());
+    }
     
     // Get a token for beginning a call, and set the current code origin index in
     // the call frame.
@@ -239,9 +292,9 @@ public:
     }
     
     // Helper methods to get predictions
-    PredictedType getPrediction(Node& node) { return node.prediction(); }
-    PredictedType getPrediction(NodeIndex nodeIndex) { return getPrediction(graph()[nodeIndex]); }
-    PredictedType getPrediction(Edge nodeUse) { return getPrediction(nodeUse.index()); }
+    SpeculatedType getSpeculation(Node& node) { return node.prediction(); }
+    SpeculatedType getSpeculation(NodeIndex nodeIndex) { return getSpeculation(graph()[nodeIndex]); }
+    SpeculatedType getSpeculation(Edge nodeUse) { return getSpeculation(nodeUse.index()); }
 
 #if USE(JSVALUE32_64)
     void* addressOfDoubleConstant(NodeIndex nodeIndex)
@@ -267,6 +320,12 @@ public:
         m_codeBlock->appendWeakReference(target);
     }
     
+    void addWeakReferences(const StructureSet& structureSet)
+    {
+        for (unsigned i = structureSet.size(); i--;)
+            addWeakReference(structureSet[i]);
+    }
+    
     void addWeakReferenceTransition(JSCell* codeOrigin, JSCell* from, JSCell* to)
     {
         m_codeBlock->appendWeakReferenceTransition(codeOrigin, from, to);
@@ -283,6 +342,10 @@ public:
     void noticeOSREntry(BasicBlock& basicBlock, JITCompiler::Label blockHead, LinkBuffer& linkBuffer)
     {
 #if DFG_ENABLE(OSR_ENTRY)
+        // OSR entry is not allowed into blocks deemed unreachable by control flow analysis.
+        if (!basicBlock.cfaHasVisited)
+            return;
+        
         OSREntryData* entry = codeBlock()->appendDFGOSREntryData(basicBlock.bytecodeBegin, linkBuffer.offsetOf(blockHead));
         
         entry->m_expectedValues = basicBlock.valuesAtHead;
@@ -316,11 +379,14 @@ private:
     void link(LinkBuffer&);
 
     void exitSpeculativeWithOSR(const OSRExit&, SpeculationRecovery*);
+    void compileExceptionHandlers();
     void linkOSRExits();
     
     // The dataflow graph currently being generated.
     Graph& m_graph;
 
+    OwnPtr<Disassembler> m_disassembler;
+    
     // Vector of calls out from JIT code, including exception handler information.
     // Count of the number of CallRecords with exception handlers.
     Vector<CallLinkRecord> m_calls;

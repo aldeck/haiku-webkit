@@ -49,6 +49,7 @@ LIST(APPEND WebCore_SOURCES
     bindings/js/JSCoordinatesCustom.cpp
     bindings/js/JSCustomVoidCallback.cpp
     bindings/js/JSCustomXPathNSResolver.cpp
+    bindings/js/JSDeprecatedPeerConnectionCustom.cpp
     bindings/js/JSDictionary.cpp
     bindings/js/JSDOMBinding.cpp
     bindings/js/JSDOMFormDataCustom.cpp
@@ -57,6 +58,7 @@ LIST(APPEND WebCore_SOURCES
     bindings/js/JSDOMMimeTypeArrayCustom.cpp
     bindings/js/JSDOMPluginArrayCustom.cpp
     bindings/js/JSDOMPluginCustom.cpp
+    bindings/js/JSDOMStringListCustom.cpp
     bindings/js/JSDOMStringMapCustom.cpp
     bindings/js/JSDOMTokenListCustom.cpp
     bindings/js/JSDOMWindowBase.cpp
@@ -72,7 +74,7 @@ LIST(APPEND WebCore_SOURCES
     bindings/js/JSErrorHandler.cpp
     bindings/js/JSEventCustom.cpp
     bindings/js/JSEventListener.cpp
-    bindings/js/JSEventTarget.cpp
+    bindings/js/JSEventTargetCustom.cpp
     bindings/js/JSExceptionBase.cpp
     bindings/js/JSFloat32ArrayCustom.cpp
     bindings/js/JSFloat64ArrayCustom.cpp
@@ -250,7 +252,7 @@ ENDIF ()
 IF (ENABLE_NOTIFICATIONS)
     LIST(APPEND WebCore_SOURCES
         bindings/js/JSDesktopNotificationsCustom.cpp
-        bindings/js/JSNotificationsCustom.cpp
+        bindings/js/JSNotificationCustom.cpp
     )
 ENDIF ()
 
@@ -284,6 +286,12 @@ IF (ENABLE_WEB_AUDIO)
         bindings/js/JSConvolverNodeCustom.cpp
         bindings/js/JSJavaScriptAudioNodeCustom.cpp
         bindings/js/JSWaveShaperNodeCustom.cpp
+    )
+ENDIF ()
+
+IF (ENABLE_WEB_INTENTS)
+    LIST (APPEND WebCore_SOURCES
+        bindings/js/JSIntentConstructor.cpp
     )
 ENDIF ()
 

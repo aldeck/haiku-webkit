@@ -16,8 +16,7 @@ function test()
     removeVendorPrefixes();
 
     name = self.location.pathname;
-    description = "My Test Database";
-    request = evalAndLog("indexedDB.open(name, description)");
+    request = evalAndLog("indexedDB.open(name)");
     request.onsuccess = openSuccess;
     request.onerror = unexpectedErrorCallback;
 }
@@ -44,7 +43,7 @@ function cleanDatabase()
 function clear()
 {
     evalAndExpectException("db.transaction('foo').objectStore('foo').clear();", "IDBDatabaseException.READ_ONLY_ERR");
-    evalAndLog("db.transaction('foo', IDBTransaction.READ_WRITE).objectStore('foo').clear();");
+    evalAndLog("db.transaction('foo', 'readwrite').objectStore('foo').clear();");
     request = evalAndLog("request = db.transaction('foo').objectStore('foo').openCursor();");
     request.onsuccess = areWeClearYet;
     request.onerror = unexpectedErrorCallback;

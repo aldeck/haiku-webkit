@@ -90,7 +90,7 @@ class MediaPlayerPrivateGStreamer : public MediaPlayerPrivateInterface {
 
             PassRefPtr<TimeRanges> buffered() const;
             float maxTimeSeekable() const;
-            unsigned bytesLoaded() const;
+            bool didLoadingProgress() const;
             unsigned totalBytes() const;
 
             void setVisible(bool);
@@ -181,6 +181,7 @@ class MediaPlayerPrivateGStreamer : public MediaPlayerPrivateInterface {
             MediaPlayer::Preload m_preload;
             bool m_delayingLoad;
             bool m_mediaDurationKnown;
+            mutable float m_maxTimeLoadedAtLastDidLoadingProgress;
 #ifndef GST_API_VERSION_1
             RefPtr<GStreamerGWorld> m_gstGWorld;
 #endif
@@ -191,6 +192,7 @@ class MediaPlayerPrivateGStreamer : public MediaPlayerPrivateInterface {
             guint m_audioTimerHandler;
             guint m_videoTimerHandler;
             GRefPtr<GstElement> m_webkitAudioSink;
+            GRefPtr<GstPad> m_videoSinkPad;
     };
 }
 

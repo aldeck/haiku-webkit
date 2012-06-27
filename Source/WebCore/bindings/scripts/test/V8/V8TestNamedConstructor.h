@@ -22,6 +22,7 @@
 #define V8TestNamedConstructor_h
 
 #include "TestNamedConstructor.h"
+#include "V8Binding.h"
 #include "V8DOMWrapper.h"
 #include "WrapperTypeInfo.h"
 #include <v8.h>
@@ -48,6 +49,7 @@ public:
     }
     inline static v8::Handle<v8::Object> wrap(TestNamedConstructor*, v8::Isolate* = 0);
     static void derefObject(void*);
+    static void visitDOMWrapper(DOMDataStore*, void*, v8::Persistent<v8::Object>);
     static WrapperTypeInfo info;
     static ActiveDOMObject* toActiveDOMObject(v8::Handle<v8::Object>);
     static const int internalFieldCount = v8DefaultWrapperInternalFieldCount + 0;
@@ -57,7 +59,7 @@ private:
 
 v8::Handle<v8::Object> V8TestNamedConstructor::wrap(TestNamedConstructor* impl, v8::Isolate* isolate)
 {
-        v8::Handle<v8::Object> wrapper = getActiveDOMObjectMap().get(impl);
+        v8::Handle<v8::Object> wrapper = getActiveDOMObjectMap(isolate).get(impl);
         if (!wrapper.IsEmpty())
             return wrapper;
     return V8TestNamedConstructor::wrapSlow(impl, isolate);
@@ -66,7 +68,7 @@ v8::Handle<v8::Object> V8TestNamedConstructor::wrap(TestNamedConstructor* impl, 
 inline v8::Handle<v8::Value> toV8(TestNamedConstructor* impl, v8::Isolate* isolate = 0)
 {
     if (!impl)
-        return v8::Null();
+        return v8NullWithCheck(isolate);
     return V8TestNamedConstructor::wrap(impl, isolate);
 }
 inline v8::Handle<v8::Value> toV8(PassRefPtr< TestNamedConstructor > impl, v8::Isolate* isolate = 0)

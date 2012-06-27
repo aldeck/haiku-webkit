@@ -26,11 +26,14 @@
 #include "config.h"
 #include "SpeechRecognitionClientProxy.h"
 
+#include "ScriptExecutionContext.h"
+#include "SecurityOrigin.h"
 #include "SpeechGrammarList.h"
 #include "SpeechRecognition.h"
 #include "SpeechRecognitionError.h"
 #include "SpeechRecognitionResult.h"
 #include "SpeechRecognitionResultList.h"
+#include "WebSecurityOrigin.h"
 #include "WebSpeechGrammar.h"
 #include "WebSpeechRecognitionHandle.h"
 #include "WebSpeechRecognitionParams.h"
@@ -52,13 +55,14 @@ PassOwnPtr<SpeechRecognitionClientProxy> SpeechRecognitionClientProxy::create(We
     return adoptPtr(new SpeechRecognitionClientProxy(recognizer));
 }
 
-void SpeechRecognitionClientProxy::start(SpeechRecognition* recognition, const SpeechGrammarList* grammarList, const String& lang, bool continuous)
+void SpeechRecognitionClientProxy::start(SpeechRecognition* recognition, const SpeechGrammarList* grammarList, const String& lang, bool continuous, unsigned long maxAlternatives)
 {
     WebVector<WebSpeechGrammar> webSpeechGrammars(static_cast<size_t>(grammarList->length()));
     for (unsigned long i = 0; i < grammarList->length(); ++i)
         webSpeechGrammars[i] = grammarList->item(i);
 
-    m_recognizer->start(WebSpeechRecognitionHandle(recognition), WebSpeechRecognitionParams(webSpeechGrammars, lang, continuous), this);
+    WebSpeechRecognitionParams params(webSpeechGrammars, lang, continuous, maxAlternatives, WebSecurityOrigin(recognition->scriptExecutionContext()->securityOrigin()));
+    m_recognizer->start(WebSpeechRecognitionHandle(recognition), params, this);
 }
 
 void SpeechRecognitionClientProxy::stop(SpeechRecognition* recognition)
@@ -136,7 +140,7 @@ void SpeechRecognitionClientProxy::didDeleteResult(const WebSpeechRecognitionHan
     recognition->didDeleteResult(resultIndex, SpeechRecognitionResultList::create(resultHistoryVector));
 }
 
-void SpeechRecognitionClientProxy::didReceiveError(const WebSpeechRecognitionHandle& handle, const WebString& message, unsigned short code)
+void SpeechRecognitionClientProxy::didReceiveError(const WebSpeechRecognitionHandle& handle, const WebString& message, WebSpeechRecognizerClient::ErrorCode code)
 {
     RefPtr<SpeechRecognition> recognition = PassRefPtr<SpeechRecognition>(handle);
     SpeechRecognitionError::Code errorCode = static_cast<SpeechRecognitionError::Code>(code);

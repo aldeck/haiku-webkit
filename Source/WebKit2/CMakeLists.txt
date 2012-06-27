@@ -41,6 +41,7 @@ SET(WebKit2_INCLUDE_DIRECTORIES
     "${WEBKIT2_DIR}/WebProcess/WebCoreSupport"
     "${WEBKIT2_DIR}/WebProcess/WebPage"
     "${WEBCORE_DIR}"
+    "${WEBCORE_DIR}/Modules/intents"
     "${WEBCORE_DIR}/accessibility"
     "${WEBCORE_DIR}/bindings/js"
     "${WEBCORE_DIR}/bindings"
@@ -51,6 +52,7 @@ SET(WebKit2_INCLUDE_DIRECTORIES
     "${WEBCORE_DIR}/editing"
     "${WEBCORE_DIR}/history"
     "${WEBCORE_DIR}/html"
+    "${WEBCORE_DIR}/html/track"
     "${WEBCORE_DIR}/inspector"
     "${WEBCORE_DIR}/loader"
     "${WEBCORE_DIR}/loader/icon"
@@ -77,8 +79,9 @@ SET(WebKit2_INCLUDE_DIRECTORIES
     "${JAVASCRIPTCORE_DIR}/assembler"
     "${JAVASCRIPTCORE_DIR}/bytecode"
     "${JAVASCRIPTCORE_DIR}/bytecompiler"
-    "${JAVASCRIPTCORE_DIR}/dfg"
     "${JAVASCRIPTCORE_DIR}/collector/handles"
+    "${JAVASCRIPTCORE_DIR}/dfg"
+    "${JAVASCRIPTCORE_DIR}/disassembler"
     "${JAVASCRIPTCORE_DIR}/heap"
     "${JAVASCRIPTCORE_DIR}/interpreter"
     "${JAVASCRIPTCORE_DIR}/jit"
@@ -120,6 +123,8 @@ SET(WebKit2_SOURCES
     Shared/FontInfo.cpp
     Shared/ImmutableArray.cpp
     Shared/ImmutableDictionary.cpp
+    Shared/IntentData.cpp
+    Shared/IntentServiceInfo.cpp
     Shared/MutableArray.cpp
     Shared/MutableDictionary.cpp
     Shared/OriginAndDatabases.cpp
@@ -234,6 +239,8 @@ SET(WebKit2_SOURCES
     UIProcess/WebIconDatabase.cpp
     UIProcess/WebIconDatabaseClient.cpp
     UIProcess/WebInspectorProxy.cpp
+    UIProcess/WebIntentData.cpp
+    UIProcess/WebIntentServiceInfo.cpp
     UIProcess/WebKeyValueStorageManagerProxy.cpp
     UIProcess/WebLayerTreeRenderer.cpp
     UIProcess/WebLoaderClient.cpp
@@ -272,6 +279,7 @@ SET(WebKit2_SOURCES
     UIProcess/API/C/WKHitTestResult.cpp
     UIProcess/API/C/WKIconDatabase.cpp
     UIProcess/API/C/WKInspector.cpp
+    UIProcess/API/C/WKIntentData.cpp
     UIProcess/API/C/WKKeyValueStorageManager.cpp
     UIProcess/API/C/WKMediaCacheManager.cpp
     UIProcess/API/C/WKNavigationData.cpp
@@ -314,7 +322,6 @@ SET(WebKit2_SOURCES
     UIProcess/Plugins/WebPluginSiteDataManager.cpp
 
     WebProcess/WebConnectionToUIProcess.cpp
-    WebProcess/WebKitMain.cpp
     WebProcess/WebProcess.cpp
 
     WebProcess/ApplicationCache/WebApplicationCacheManager.cpp
@@ -395,6 +402,7 @@ SET(WebKit2_SOURCES
     WebProcess/ResourceCache/WebResourceCacheManager.cpp
 
     WebProcess/WebCoreSupport/WebChromeClient.cpp
+    WebProcess/WebCoreSupport/WebColorChooser.cpp
     WebProcess/WebCoreSupport/WebContextMenuClient.cpp
     WebProcess/WebCoreSupport/WebDatabaseManager.cpp
     WebProcess/WebCoreSupport/WebDragClient.cpp
@@ -492,6 +500,16 @@ SET(WebKit2_MESSAGES_IN_FILES
     WebProcess/WebPage/WebPage.messages.in
 )
 
+SET(WebProcess_EXECUTABLE_NAME WebProcess)
+
+SET(WebProcess_LIBRARIES
+    ${JavaScriptCore_LIBRARY_NAME}
+    ${WebCore_LIBRARY_NAME}
+    ${WebKit2_LIBRARY_NAME}
+)
+
+WEBKIT_INCLUDE_CONFIG_FILES_IF_EXISTS()
+
 # Create JavaScript C++ code given an IDL input
 FOREACH (_file ${WebKit2_MESSAGES_IN_FILES})
     GET_FILENAME_COMPONENT (_name ${_file} NAME_WE)
@@ -510,19 +528,6 @@ SET(WebKit2_LIBRARIES
     ${WebCore_LIBRARY_NAME}
 )
 
-SET(WebProcess_NAME ../bin/WebProcess)
-SET(WebProcess_SOURCES "")
-
-SET(WebProcess_LIBRARIES
-    ${JavaScriptCore_LIBRARY_NAME}
-    ${WebCore_LIBRARY_NAME}
-    ${WebKit2_LIBRARY_NAME}
-)
-
-SET(ForwardingHeaders_NAME )
-SET(ForwardingNetworkHeaders_NAME )
-WEBKIT_INCLUDE_CONFIG_FILES_IF_EXISTS()
-
 ADD_DEFINITIONS(-DBUILDING_WEBKIT)
 INCLUDE_DIRECTORIES(${WebKit2_INCLUDE_DIRECTORIES})
 ADD_LIBRARY(${WebKit2_LIBRARY_NAME} ${WebKit2_LIBRARY_TYPE} ${WebKit2_SOURCES})
@@ -534,14 +539,15 @@ TARGET_LINK_LIBRARIES(${WebKit2_LIBRARY_NAME} ${WebKit2_LIBRARIES})
 SET_TARGET_PROPERTIES(${WebKit2_LIBRARY_NAME} PROPERTIES FOLDER "WebKit")
 SET_TARGET_PROPERTIES(${WebKit2_LIBRARY_NAME} PROPERTIES LINK_INTERFACE_LIBRARIES "")
 
-ADD_EXECUTABLE(${WebProcess_NAME} ${WebProcess_SOURCES})
-TARGET_LINK_LIBRARIES(${WebProcess_NAME} ${WebProcess_LIBRARIES})
-SET_TARGET_PROPERTIES(${WebProcess_NAME} PROPERTIES FOLDER "WebKit")
+ADD_EXECUTABLE(${WebProcess_EXECUTABLE_NAME} ${WebProcess_SOURCES})
+TARGET_LINK_LIBRARIES(${WebProcess_EXECUTABLE_NAME} ${WebProcess_LIBRARIES})
+SET_TARGET_PROPERTIES(${WebProcess_EXECUTABLE_NAME} PROPERTIES FOLDER "WebKit")
 
 SET_TARGET_PROPERTIES(${WebKit2_LIBRARY_NAME} PROPERTIES VERSION ${PROJECT_VERSION} SOVERSION ${PROJECT_VERSION_MAJOR})
 IF (WebKit2_LINK_FLAGS)
     ADD_TARGET_PROPERTIES(${WebKit2_LIBRARY_NAME} LINK_FLAGS "${WebKit2_LINK_FLAGS}")
-    ADD_TARGET_PROPERTIES(${WebProcess_NAME} LINK_FLAGS "${WebKit2_LINK_FLAGS}")
+    ADD_TARGET_PROPERTIES(${WebProcess_EXECUTABLE_NAME} LINK_FLAGS "${WebKit2_LINK_FLAGS}")
 ENDIF ()
 
 INSTALL(TARGETS ${WebKit2_LIBRARY_NAME} DESTINATION "${LIB_INSTALL_DIR}")
+INSTALL(TARGETS ${WebProcess_EXECUTABLE_NAME} DESTINATION "${EXEC_INSTALL_DIR}")

@@ -65,7 +65,6 @@ ScriptDebugServer::ScriptDebugServer()
 
 ScriptDebugServer::~ScriptDebugServer()
 {
-    deleteAllValues(m_pageListenersMap);
 }
 
 String ScriptDebugServer::setBreakpoint(const String& sourceID, const ScriptBreakpoint& scriptBreakpoint, int* actualLineNumber, int* actualColumnNumber)
@@ -128,7 +127,7 @@ bool ScriptDebugServer::hasBreakpoint(intptr_t sourceID, const TextPosition& pos
         // An erroneous condition counts as "false".
         return false;
     }
-    return result.toBoolean(m_currentCallFrame->scopeChain()->globalObject->globalExec());
+    return result.toBoolean();
 }
 
 void ScriptDebugServer::clearBreakpoints()
@@ -153,7 +152,11 @@ void ScriptDebugServer::setPauseOnNextStatement(bool pause)
 
 void ScriptDebugServer::breakProgram()
 {
-    // FIXME(WK43332): implement this.
+    if (m_paused || !m_currentCallFrame)
+        return;
+
+    m_pauseOnNextStatement = true;
+    pauseIfNeeded(m_currentCallFrame->dynamicGlobalObject());
 }
 
 void ScriptDebugServer::continueProgram()
@@ -201,6 +204,13 @@ bool ScriptDebugServer::setScriptSource(const String&, const String&, bool, Stri
 {
     // FIXME(40300): implement this.
     return false;
+}
+
+
+void ScriptDebugServer::updateCallStack(ScriptValue*)
+{
+    // This method is used for restart frame feature that is not implemented yet.
+    // FIXME(40300): implement this.
 }
 
 void ScriptDebugServer::dispatchDidPause(ScriptDebugListener* listener)
@@ -460,6 +470,21 @@ void ScriptDebugServer::didReachBreakpoint(const DebuggerCallFrame& debuggerCall
 void ScriptDebugServer::recompileAllJSFunctionsSoon()
 {
     m_recompileTimer.startOneShot(0);
+}
+
+void ScriptDebugServer::compileScript(ScriptState*, const String&, const String&, String*, String*)
+{
+    // FIXME(89652): implement this.
+}
+
+void ScriptDebugServer::clearCompiledScripts()
+{
+    // FIXME(89652): implement this.
+}
+
+void ScriptDebugServer::runScript(ScriptState*, const String&, ScriptValue*, bool*, String*)
+{
+    // FIXME(89652): implement this.
 }
 
 } // namespace WebCore

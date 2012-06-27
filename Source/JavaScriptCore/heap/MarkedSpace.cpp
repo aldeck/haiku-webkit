@@ -30,6 +30,52 @@ namespace JSC {
 
 class Structure;
 
+class Free {
+public:
+    typedef MarkedBlock* ReturnType;
+
+    enum FreeMode { FreeOrShrink, FreeAll };
+
+    Free(FreeMode, MarkedSpace*);
+    void operator()(MarkedBlock*);
+    ReturnType returnValue();
+    
+private:
+    FreeMode m_freeMode;
+    MarkedSpace* m_markedSpace;
+    DoublyLinkedList<MarkedBlock> m_blocks;
+};
+
+inline Free::Free(FreeMode freeMode, MarkedSpace* newSpace)
+    : m_freeMode(freeMode)
+    , m_markedSpace(newSpace)
+{
+}
+
+inline void Free::operator()(MarkedBlock* block)
+{
+    if (m_freeMode == FreeOrShrink)
+        m_markedSpace->freeOrShrinkBlock(block);
+    else
+        m_markedSpace->freeBlock(block);
+}
+
+inline Free::ReturnType Free::returnValue()
+{
+    return m_blocks.head();
+}
+
+struct VisitWeakSet : MarkedBlock::VoidFunctor {
+    VisitWeakSet(HeapRootVisitor& heapRootVisitor) : m_heapRootVisitor(heapRootVisitor) { }
+    void operator()(MarkedBlock* block) { block->visitWeakSet(m_heapRootVisitor); }
+private:
+    HeapRootVisitor& m_heapRootVisitor;
+};
+
+struct ReapWeakSet : MarkedBlock::VoidFunctor {
+    void operator()(MarkedBlock* block) { block->reapWeakSet(); }
+};
+
 MarkedSpace::MarkedSpace(Heap* heap)
     : m_heap(heap)
 {
@@ -44,6 +90,22 @@ MarkedSpace::MarkedSpace(Heap* heap)
     }
 }
 
+MarkedSpace::~MarkedSpace()
+{
+    Free free(Free::FreeAll, this);
+    forEachBlock(free);
+}
+
+struct LastChanceToFinalize : MarkedBlock::VoidFunctor {
+    void operator()(MarkedBlock* block) { block->lastChanceToFinalize(); }
+};
+
+void MarkedSpace::lastChanceToFinalize()
+{
+    canonicalizeCellLivenessData();
+    forEachBlock<LastChanceToFinalize>();
+}
+
 void MarkedSpace::resetAllocators()
 {
     for (size_t cellSize = preciseStep; cellSize <= preciseCutoff; cellSize += preciseStep) {
@@ -55,6 +117,17 @@ void MarkedSpace::resetAllocators()
         allocatorFor(cellSize).reset();
         destructorAllocatorFor(cellSize).reset();
     }
+}
+
+void MarkedSpace::visitWeakSets(HeapRootVisitor& heapRootVisitor)
+{
+    VisitWeakSet visitWeakSet(heapRootVisitor);
+    forEachBlock(visitWeakSet);
+}
+
+void MarkedSpace::reapWeakSets()
+{
+    forEachBlock<ReapWeakSet>();
 }
 
 void MarkedSpace::canonicalizeCellLivenessData()
@@ -85,56 +158,31 @@ bool MarkedSpace::isPagedOut(double deadline)
     return false;
 }
 
-void MarkedSpace::freeBlocks(MarkedBlock* head)
+void MarkedSpace::freeBlock(MarkedBlock* block)
 {
-    MarkedBlock* next;
-    for (MarkedBlock* block = head; block; block = next) {
-        next = static_cast<MarkedBlock*>(block->next());
-        
-        m_blocks.remove(block);
-        block->sweep();
-
-        m_heap->blockAllocator().deallocate(block);
-    }
+    allocatorFor(block).removeBlock(block);
+    m_blocks.remove(block);
+    m_heap->blockAllocator().deallocate(MarkedBlock::destroy(block));
 }
 
-class TakeIfUnmarked {
-public:
-    typedef MarkedBlock* ReturnType;
-    
-    TakeIfUnmarked(MarkedSpace*);
-    void operator()(MarkedBlock*);
-    ReturnType returnValue();
-    
-private:
-    MarkedSpace* m_markedSpace;
-    DoublyLinkedList<MarkedBlock> m_empties;
-};
-
-inline TakeIfUnmarked::TakeIfUnmarked(MarkedSpace* newSpace)
-    : m_markedSpace(newSpace)
+void MarkedSpace::freeOrShrinkBlock(MarkedBlock* block)
 {
-}
-
-inline void TakeIfUnmarked::operator()(MarkedBlock* block)
-{
-    if (!block->markCountIsZero())
+    if (!block->isEmpty()) {
+        block->shrink();
         return;
-    
-    m_markedSpace->allocatorFor(block).removeBlock(block);
-    m_empties.append(block);
+    }
+
+    freeBlock(block);
 }
 
-inline TakeIfUnmarked::ReturnType TakeIfUnmarked::returnValue()
-{
-    return m_empties.head();
-}
+struct Shrink : MarkedBlock::VoidFunctor {
+    void operator()(MarkedBlock* block) { block->shrink(); }
+};
 
 void MarkedSpace::shrink()
 {
-    // We record a temporary list of empties to avoid modifying m_blocks while iterating it.
-    TakeIfUnmarked takeIfUnmarked(this);
-    freeBlocks(forEachBlock(takeIfUnmarked));
+    Free freeOrShrink(Free::FreeOrShrink, this);
+    forEachBlock(freeOrShrink);
 }
 
 #if ENABLE(GGC)
