@@ -62,6 +62,11 @@ void EditorClientHaiku::pageDestroyed()
     delete this;
 }
 
+void EditorClientHaiku::frameWillDetachPage(Frame*)
+{
+    notImplemented();
+}
+
 bool EditorClientHaiku::shouldDeleteRange(Range*)
 {
     notImplemented();
@@ -537,6 +542,12 @@ void EditorClientHaiku::textDidChangeInTextArea(Element*)
     notImplemented();
 }
 
+bool EditorClientHaiku::shouldEraseMarkersAfterChangeSelection(TextCheckingType) const
+{
+    notImplemented();
+    return false;
+}
+
 void EditorClientHaiku::ignoreWordInSpellDocument(const String&)
 {
     notImplemented();
@@ -563,6 +574,16 @@ void EditorClientHaiku::checkGrammarOfString(const UChar*, int, Vector<GrammarDe
     notImplemented();
 }
 
+void EditorClientHaiku::getGuessesForWord(const String&, const String&, Vector<String>&)
+{
+    notImplemented();
+}
+
+void EditorClientHaiku::requestCheckingOfString(PassRefPtr<TextCheckingRequest>)
+{
+    notImplemented();
+}
+
 void EditorClientHaiku::updateSpellingUIWithGrammarString(const String&, const GrammarDetail&)
 {
     notImplemented();
@@ -585,16 +606,6 @@ bool EditorClientHaiku::spellingUIIsShowing()
 }
 
 void EditorClientHaiku::willSetInputMethodState()
-{
-    notImplemented();
-}
-
-void EditorClientHaiku::getGuessesForWord(const String&, const String&, Vector<String>&)
-{
-    notImplemented();
-}
-
-void EditorClientHaiku::requestCheckingOfString(SpellChecker*, const TextCheckingRequest&)
 {
     notImplemented();
 }

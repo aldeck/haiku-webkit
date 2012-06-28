@@ -58,7 +58,7 @@ all : \
     RegExpObject.lut.h \
     StringConstructor.lut.h \
     StringPrototype.lut.h \
-    docs/bytecode.html \
+#    docs/bytecode.html \
     udis86_itab.h \
 #
 
